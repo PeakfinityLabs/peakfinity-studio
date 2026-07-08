@@ -30,10 +30,10 @@ export function PromptOptimizer({
   onAccept: (optimized: string, original: string) => void;
   onRevert: (original: string) => void;
 }) {
-  const isVideo = MODELS[slug].type === "VIDEO";
-  // Talking-head styles only apply to video models.
+  const modelType = MODELS[slug].type === "VIDEO" ? "video" : "image";
+  // Show the styles that apply to this model's kind (plus the universal Default).
   const presetOptions = OPTIMIZER_PRESETS.filter(
-    (p) => !PRESET_META[p].videoOnly || isVideo
+    (p) => PRESET_META[p].appliesTo === "both" || PRESET_META[p].appliesTo === modelType
   );
 
   const [preset, setPreset] = useState<OptimizerPreset>("default");
@@ -41,11 +41,11 @@ export function PromptOptimizer({
   const [proposal, setProposal] = useState<{ original: string; optimized: string } | null>(null);
   const [accepted, setAccepted] = useState<string | null>(null);
 
+  const scriptInput = PRESET_META[preset].scriptInput ?? false;
+
   const optimize = async () => {
     if (!prompt.trim()) {
-      toast.error(
-        preset === "default" ? "Write a rough prompt first." : "Paste the script first."
-      );
+      toast.error(scriptInput ? "Paste the script first." : "Write a rough prompt first.");
       return;
     }
     setBusy(true);
@@ -116,7 +116,7 @@ export function PromptOptimizer({
           <SelectTrigger size="sm" className="w-44">
             <SelectValue>{PRESET_META[preset].label}</SelectValue>
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="min-w-72">
             {presetOptions.map((p) => (
               <SelectItem key={p} value={p}>
                 <div className="flex flex-col">
@@ -129,7 +129,7 @@ export function PromptOptimizer({
         </Select>
       )}
 
-      {preset !== "default" && (
+      {scriptInput && (
         <span className="text-xs text-muted-foreground">
           Put your script in the prompt box — it&apos;s kept word-for-word.
         </span>
