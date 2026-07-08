@@ -10,7 +10,7 @@ const querySchema = z.object({
 });
 
 export async function GET(req: Request) {
-  const gate = await apiGuard();
+  const gate = await apiGuard({ requireAdmin: true });
   if (gate instanceof NextResponse) return gate;
 
   const url = new URL(req.url);

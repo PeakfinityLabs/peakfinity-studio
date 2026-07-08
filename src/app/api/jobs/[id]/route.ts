@@ -5,6 +5,7 @@ import { fal } from "@/lib/fal/client";
 import { falErrorMessage, isFalValidationError } from "@/lib/fal/errors";
 import { completeJob, failJob } from "@/lib/jobs/complete";
 import { parseJobInput } from "@/lib/jobs/types";
+import { deleteFromR2 } from "@/lib/r2";
 import type { Prisma } from "@/generated/prisma/client";
 
 export const runtime = "nodejs";
@@ -28,6 +29,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   let job = await loadJob(id);
   if (!job) {
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
+  // Non-admins may only view their own jobs (404, not 403, to avoid leaking
+  // that a job with this id exists).
+  if (gate.role !== "ADMIN" && job.userId !== gate.id) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
@@ -118,4 +124,36 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       })),
     },
   });
+}
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const me = await apiGuard();
+  if (me instanceof NextResponse) return me;
+
+  const { id } = await params;
+  const job = await prisma.job.findUnique({
+    where: { id },
+    include: { assets: { select: { r2Key: true } } },
+  });
+  if (!job) {
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
+  if (job.userId !== me.id && me.role !== "ADMIN") {
+    return NextResponse.json({ error: "You can only delete your own generations" }, { status: 403 });
+  }
+
+  // Best-effort: drop persisted media from R2 (no-op when R2 isn't configured
+  // or nothing was persisted). Never block the delete on storage cleanup.
+  const r2Keys = job.assets.map((a) => a.r2Key).filter((k): k is string => Boolean(k));
+  try {
+    await deleteFromR2(r2Keys);
+  } catch {
+    // orphaned objects are acceptable; the DB record is what users see
+  }
+
+  // Deleting the Job cascades its Assets. UsageEvent.jobId is set null (not
+  // deleted) so the spend a completed generation already incurred stays counted.
+  await prisma.job.delete({ where: { id } });
+
+  return NextResponse.json({ deleted: true });
 }

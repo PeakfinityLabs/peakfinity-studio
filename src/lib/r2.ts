@@ -1,5 +1,10 @@
 import "server-only";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 
 const globalForR2 = globalThis as unknown as { r2?: S3Client };
 
@@ -47,6 +52,16 @@ export async function getFromR2(key: string, range?: string) {
       Bucket: process.env.R2_BUCKET,
       Key: key,
       Range: range,
+    })
+  );
+}
+
+export async function deleteFromR2(keys: string[]): Promise<void> {
+  if (keys.length === 0 || !r2Configured()) return;
+  await r2Client().send(
+    new DeleteObjectsCommand({
+      Bucket: process.env.R2_BUCKET,
+      Delete: { Objects: keys.map((Key) => ({ Key })) },
     })
   );
 }

@@ -7,7 +7,12 @@ import { cn } from "@/lib/utils";
 const baseLinks = [
   { href: "/studio", label: "Studio" },
   { href: "/library", label: "Library" },
+];
+
+// Usage (team spend) and Admin are admin-only.
+const adminLinks = [
   { href: "/usage", label: "Usage" },
+  { href: "/admin", label: "Admin" },
 ];
 
 export function MainNav({
@@ -18,7 +23,7 @@ export function MainNav({
   pendingCount?: number;
 }) {
   const pathname = usePathname();
-  const links = isAdmin ? [...baseLinks, { href: "/admin", label: "Admin" }] : baseLinks;
+  const links = isAdmin ? [...baseLinks, ...adminLinks] : baseLinks;
 
   return (
     <nav className="flex items-center gap-0.5 rounded-full border bg-card/60 p-1">

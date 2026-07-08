@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getSessionUser } from "@/lib/authz";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -30,6 +32,10 @@ export default async function UsagePage({
 }: {
   searchParams: Promise<{ period?: string }>;
 }) {
+  // Team-wide spend is admin-only.
+  const me = await getSessionUser();
+  if (!me || me.role !== "ADMIN") redirect("/studio");
+
   const { period = "30" } = await searchParams;
   const days = period === "all" ? null : Number(period) || 30;
   const summary = await getUsageSummary(days);

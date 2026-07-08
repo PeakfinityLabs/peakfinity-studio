@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,10 +55,17 @@ function slugFor(genModel: string) {
   return MODEL_SLUGS.find((s) => MODELS[s].genModel === genModel);
 }
 
-export function LibraryView() {
+export function LibraryView({
+  isAdmin,
+  currentUserId,
+}: {
+  isAdmin: boolean;
+  currentUserId: string;
+}) {
   const [jobs, setJobs] = useState<LibraryJob[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [filters, setFilters] = useState({ model: "all", type: "all", days: "all", owner: "all" });
 
   const query = useCallback(
@@ -105,17 +113,34 @@ export function LibraryView() {
   const setFilter = (key: keyof typeof filters) => (value: string | null) =>
     setFilters((prev) => ({ ...prev, [key]: value ?? "all" }));
 
+  const deleteJob = async (id: string) => {
+    if (!window.confirm("Delete this generation? This can't be undone.")) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Delete failed");
+      setJobs((prev) => (prev ?? []).filter((j) => j.id !== id));
+      toast.success("Generation deleted");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Delete failed");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const filterDefs = [
+    ["model", MODEL_FILTERS],
+    ["type", TYPE_FILTERS],
+    ["days", DATE_FILTERS],
+    // Owner filter only matters for admins (everyone else sees only their own).
+    ...(isAdmin ? ([["owner", OWNER_FILTERS]] as const) : []),
+  ] as const;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ["model", MODEL_FILTERS],
-            ["type", TYPE_FILTERS],
-            ["days", DATE_FILTERS],
-            ["owner", OWNER_FILTERS],
-          ] as const
-        ).map(([key, options]) => (
+        {filterDefs.map(([key, options]) => (
           <Select key={key} value={filters[key]} onValueChange={setFilter(key)}>
             <SelectTrigger className="w-40">
               <SelectValue>
@@ -190,17 +215,29 @@ export function LibraryView() {
                     </div>
                     <p className="line-clamp-2 text-sm">{job.optimizedPrompt ?? job.prompt}</p>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
+                      <span className="min-w-0 truncate">
                         {job.user.name} · {new Date(job.createdAt).toLocaleDateString()}
                       </span>
-                      {slug && (
-                        <Link
-                          href={`/studio/${slug}?rerun=${job.id}`}
-                          className="text-foreground underline-offset-4 hover:underline"
-                        >
-                          Re-run
-                        </Link>
-                      )}
+                      <div className="flex shrink-0 items-center gap-3">
+                        {slug && (
+                          <Link
+                            href={`/studio/${slug}?rerun=${job.id}`}
+                            className="text-foreground underline-offset-4 hover:underline"
+                          >
+                            Re-run
+                          </Link>
+                        )}
+                        {(isAdmin || job.user.id === currentUserId) && (
+                          <button
+                            type="button"
+                            disabled={deletingId === job.id}
+                            onClick={() => void deleteJob(job.id)}
+                            className="text-destructive underline-offset-4 hover:underline disabled:opacity-50"
+                          >
+                            {deletingId === job.id ? "Deleting…" : "Delete"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

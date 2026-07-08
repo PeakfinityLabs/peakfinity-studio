@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -67,9 +68,19 @@ function logLines(logs: unknown): string[] {
     .slice(-8);
 }
 
-export function JobView({ jobId }: { jobId: string }) {
+export function JobView({
+  jobId,
+  isAdmin,
+  currentUserId,
+}: {
+  jobId: string;
+  isAdmin: boolean;
+  currentUserId: string;
+}) {
+  const router = useRouter();
   const [job, setJob] = useState<JobData | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchJob = useCallback(async () => {
@@ -101,6 +112,21 @@ export function JobView({ jobId }: { jobId: string }) {
       toast.error(error instanceof Error ? error.message : "Could not cancel");
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!window.confirm("Delete this generation? This can't be undone.")) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not delete");
+      toast.success("Generation deleted");
+      router.push("/library");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete");
+      setDeleting(false);
     }
   };
 
@@ -147,6 +173,16 @@ export function JobView({ jobId }: { jobId: string }) {
                 <Link href={`/studio/${def.slug}?rerun=${job.id}`}>Re-run with same settings</Link>
               }
             />
+          )}
+          {!isOpen && (isAdmin || job.user.id === currentUserId) && (
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleting}
+              onClick={() => void remove()}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </Button>
           )}
         </div>
       </div>

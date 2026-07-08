@@ -27,9 +27,13 @@ export async function GET(req: Request) {
   }
   const { mine, model, type, status, cursor, take, sinceDays } = parsed.data;
 
+  // Only admins can see the whole team's work. Everyone else is scoped to their
+  // own generations regardless of the `mine` param.
+  const scopeToOwn = me.role !== "ADMIN" || mine === "1";
+
   const jobs = await prisma.job.findMany({
     where: {
-      ...(mine === "1" ? { userId: me.id } : {}),
+      ...(scopeToOwn ? { userId: me.id } : {}),
       ...(model ? { model } : {}),
       ...(type ? { type } : {}),
       ...(status ? { status } : {}),
