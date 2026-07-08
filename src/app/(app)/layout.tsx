@@ -35,6 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 key={link.href}
                 variant="ghost"
                 size="sm"
+                nativeButton={false}
                 render={<Link href={link.href}>{link.label}</Link>}
               />
             ))}
