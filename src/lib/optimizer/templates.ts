@@ -49,3 +49,67 @@ editor used (same numbering), and keep them naturally embedded in the action
 ("@Image1 walks through the market from @Image2"). If the editor said audio is enabled,
 you may direct sound ("as @Audio1 swells"); never introduce @-references they didn't provide.`,
 };
+
+// ─── Optimizer styles (presets) ──────────────────────────────────────────────
+// Talking-head / influencer ad formats. Unlike the default video template
+// (which ADDS camera movement), these are single static-shot spoken-delivery
+// prompts, so they must NOT add camera moves, cuts or B-roll. The editor's
+// input is treated as the SCRIPT the on-camera person says, preserved verbatim.
+
+export type OptimizerPreset = "default" | "static-video" | "talking-head";
+
+export const OPTIMIZER_PRESETS = ["default", "static-video", "talking-head"] as const;
+
+export const PRESET_META: Record<
+  OptimizerPreset,
+  { label: string; description: string; videoOnly: boolean }
+> = {
+  default: {
+    label: "Default",
+    description: "Model-aware enhancement",
+    videoOnly: false,
+  },
+  "static-video": {
+    label: "Static video",
+    description: "Static camera, influencer talking straight to camera",
+    videoOnly: true,
+  },
+  "talking-head": {
+    label: "Talking head",
+    description: "Person delivers your script with direct, clear energy",
+    videoOnly: true,
+  },
+};
+
+const SCRIPT_RULES = `
+Treat the editor's input as the SCRIPT the on-camera person speaks, plus any notes about
+who they are (gender, persona, look).
+Hard rules:
+- Preserve the SCRIPT WORD-FOR-WORD inside the double quotes. Never paraphrase, translate,
+  shorten, reorder or "improve" the spoken words.
+- This is ONE continuous static talking-head shot: do NOT add camera movement, cuts,
+  transitions, scene changes or B-roll.
+- Output ONLY the single final prompt line — no preamble, no explanation.`;
+
+const PRESET_TEMPLATES: Record<Exclude<OptimizerPreset, "default">, string> = {
+  "static-video": `${SCRIPT_RULES}
+Format the prompt in this exact "static video" shape:
+(static camera, no movement) <subject> is looking directly at the camera, realistic arm
+movements, clear influencer tone: "<script>"
+- <subject> is "he", "she", or a short persona description if the editor specified one;
+  otherwise use "the subject".
+- Keep every cue: static camera / no movement / looking directly at the camera /
+  realistic arm movements / clear influencer tone.`,
+
+  "talking-head": `${SCRIPT_RULES}
+Format the prompt in this exact "talking head" shape:
+realistic arm movements, the <woman/man/subject> says exactly with direct clear energy: "<script>"
+- Use "woman" or "man" if the editor specified the speaker; otherwise "person".
+- Keep every cue: realistic arm movements / says exactly / direct clear energy.`,
+};
+
+/** Builds the optimizer system prompt for a model + chosen style. */
+export function buildOptimizerSystemPrompt(model: ModelSlug, preset: OptimizerPreset): string {
+  if (preset === "default") return OPTIMIZER_TEMPLATES[model];
+  return PRESET_TEMPLATES[preset];
+}

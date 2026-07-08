@@ -4,11 +4,19 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { ModelSlug } from "@/lib/models/registry";
+import { MODELS, type ModelSlug } from "@/lib/models/registry";
+import { OPTIMIZER_PRESETS, PRESET_META, type OptimizerPreset } from "@/lib/optimizer/templates";
 
 /**
- * "Optimize" button + side-by-side original/optimized comparison.
+ * "Optimize" button + style selector + side-by-side original/optimized compare.
  * The editor can accept, edit the optimized text before accepting, or revert.
  */
 export function PromptOptimizer({
@@ -22,13 +30,22 @@ export function PromptOptimizer({
   onAccept: (optimized: string, original: string) => void;
   onRevert: (original: string) => void;
 }) {
+  const isVideo = MODELS[slug].type === "VIDEO";
+  // Talking-head styles only apply to video models.
+  const presetOptions = OPTIMIZER_PRESETS.filter(
+    (p) => !PRESET_META[p].videoOnly || isVideo
+  );
+
+  const [preset, setPreset] = useState<OptimizerPreset>("default");
   const [busy, setBusy] = useState(false);
   const [proposal, setProposal] = useState<{ original: string; optimized: string } | null>(null);
   const [accepted, setAccepted] = useState<string | null>(null);
 
   const optimize = async () => {
     if (!prompt.trim()) {
-      toast.error("Write a rough prompt first.");
+      toast.error(
+        preset === "default" ? "Write a rough prompt first." : "Paste the script first."
+      );
       return;
     }
     setBusy(true);
@@ -36,7 +53,7 @@ export function PromptOptimizer({
       const res = await fetch("/api/optimize", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt, model: slug }),
+        body: JSON.stringify({ prompt, model: slug, preset }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Optimization failed");
@@ -89,10 +106,35 @@ export function PromptOptimizer({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void optimize()}>
         {busy ? "Optimizing…" : "✨ Optimize prompt"}
       </Button>
+
+      {presetOptions.length > 1 && (
+        <Select value={preset} onValueChange={(v) => setPreset((v as OptimizerPreset) ?? "default")}>
+          <SelectTrigger size="sm" className="w-44">
+            <SelectValue>{PRESET_META[preset].label}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {presetOptions.map((p) => (
+              <SelectItem key={p} value={p}>
+                <div className="flex flex-col">
+                  <span>{PRESET_META[p].label}</span>
+                  <span className="text-xs text-muted-foreground">{PRESET_META[p].description}</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+
+      {preset !== "default" && (
+        <span className="text-xs text-muted-foreground">
+          Put your script in the prompt box — it&apos;s kept word-for-word.
+        </span>
+      )}
+
       {accepted !== null && (
         <Button
           type="button"
