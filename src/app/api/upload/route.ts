@@ -38,14 +38,21 @@ export async function POST(req: Request) {
     }
   }
 
-  const uploaded = await Promise.all(
-    files.map(async (file) => ({
-      name: file.name,
-      size: file.size,
-      contentType: file.type,
-      url: await fal.storage.upload(file),
-    }))
-  );
-
-  return NextResponse.json({ files: uploaded });
+  try {
+    const uploaded = await Promise.all(
+      files.map(async (file) => ({
+        name: file.name,
+        size: file.size,
+        contentType: file.type,
+        url: await fal.storage.upload(file),
+      }))
+    );
+    return NextResponse.json({ files: uploaded });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "fal upload failed";
+    return NextResponse.json(
+      { error: `fal storage upload failed: ${message} (is FAL_KEY set?)` },
+      { status: 502 }
+    );
+  }
 }

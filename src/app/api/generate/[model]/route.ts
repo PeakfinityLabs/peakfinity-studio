@@ -70,10 +70,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
   const falInput = def.toFalInput(modelParams);
   const estimatedCostCents = def.estimateCostCents(modelParams);
 
-  const { request_id: falRequestId } = await fal.queue.submit(endpoint, {
-    input: falInput,
-    webhookUrl: webhookUrl(),
-  });
+  let falRequestId: string;
+  try {
+    const submitted = await fal.queue.submit(endpoint, {
+      input: falInput,
+      webhookUrl: webhookUrl(),
+    });
+    falRequestId = submitted.request_id;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "fal submission failed";
+    return NextResponse.json(
+      { error: `fal rejected the submission: ${message}` },
+      { status: 502 }
+    );
+  }
 
   const prompt = typeof modelParams.prompt === "string" ? modelParams.prompt : "";
   const optimizedPrompt =
