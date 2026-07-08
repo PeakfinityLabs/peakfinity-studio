@@ -13,6 +13,7 @@ const listQuerySchema = z.object({
   status: z.nativeEnum(JobStatus).optional(),
   cursor: z.string().optional(),
   take: z.coerce.number().int().min(1).max(50).default(24),
+  sinceDays: z.coerce.number().int().min(1).max(365).optional(),
 });
 
 export async function GET(req: Request) {
@@ -26,7 +27,7 @@ export async function GET(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid query", issues: parsed.error.issues }, { status: 400 });
   }
-  const { mine, model, type, status, cursor, take } = parsed.data;
+  const { mine, model, type, status, cursor, take, sinceDays } = parsed.data;
 
   const jobs = await prisma.job.findMany({
     where: {
@@ -34,6 +35,9 @@ export async function GET(req: Request) {
       ...(model ? { model } : {}),
       ...(type ? { type } : {}),
       ...(status ? { status } : {}),
+      ...(sinceDays
+        ? { createdAt: { gte: new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000) } }
+        : {}),
     },
     include: {
       assets: { where: { kind: "OUTPUT" } },

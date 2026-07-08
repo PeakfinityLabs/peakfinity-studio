@@ -3,7 +3,10 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { fal } from "@/lib/fal/client";
 import { isModelSlug, MODELS } from "@/lib/models/registry";
+import { checkRateLimit } from "@/lib/rate-limit";
 import type { Prisma } from "@/generated/prisma/client";
+
+const GENERATE_LIMIT = 10; // per user per minute — protects the fal budget
 
 export const runtime = "nodejs";
 
@@ -31,6 +34,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const limit = checkRateLimit(`generate:${session.user.id}`, GENERATE_LIMIT, 60_000);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: `Rate limit reached — try again in ${limit.retryAfterSeconds}s` },
+      { status: 429, headers: { "retry-after": String(limit.retryAfterSeconds) } }
+    );
   }
 
   const { model: slug } = await params;

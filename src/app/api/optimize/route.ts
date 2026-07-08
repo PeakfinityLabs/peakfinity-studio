@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { MODEL_SLUGS } from "@/lib/models/registry";
 import { optimizerProvider } from "@/lib/optimizer/provider";
 import { OPTIMIZER_TEMPLATES } from "@/lib/optimizer/templates";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,14 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const limit = checkRateLimit(`optimize:${session.user.id}`, 20, 60_000);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: `Rate limit reached — try again in ${limit.retryAfterSeconds}s` },
+      { status: 429, headers: { "retry-after": String(limit.retryAfterSeconds) } }
+    );
   }
 
   let body: unknown;
