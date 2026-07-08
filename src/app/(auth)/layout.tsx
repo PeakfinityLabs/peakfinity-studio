@@ -1,3 +1,4 @@
+import { CatYarn } from "@/components/brand/cat-yarn";
 import { Wordmark } from "@/components/brand/wordmark";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -14,6 +15,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <p className="relative mt-10 text-xs text-muted-foreground">
         Internal tool · Peakfinity Labs
       </p>
+      <div className="relative">
+        <CatYarn />
+      </div>
     </div>
   );
 }
