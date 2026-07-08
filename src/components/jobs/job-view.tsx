@@ -121,11 +121,17 @@ export function JobView({ jobId }: { jobId: string }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">{def?.label ?? job.model}</h1>
-        <Badge variant={statusBadgeVariant(job.status)}>{job.status.replace("_", " ")}</Badge>
-        <span className="text-sm text-muted-foreground">
-          est. {formatCents(job.estimatedCostCents)} · by {job.user.name}
-        </span>
+        <div>
+          <p className="label-mono mb-1">
+            {job.type === "VIDEO" ? "Video" : "Image"} ·{" "}
+            <span className="font-mono normal-case">{formatCents(job.estimatedCostCents)}</span> · by{" "}
+            {job.user.name}
+          </p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-display text-2xl">{def?.label ?? job.model}</h1>
+            <Badge variant={statusBadgeVariant(job.status)}>{job.status.replace("_", " ")}</Badge>
+          </div>
+        </div>
         <div className="ml-auto flex gap-2">
           {isOpen && (
             <Button variant="outline" size="sm" disabled={cancelling} onClick={() => void cancel()}>

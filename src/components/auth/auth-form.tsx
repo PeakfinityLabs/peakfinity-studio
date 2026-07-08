@@ -36,9 +36,9 @@ export function AuthForm({
   const [state, formAction, pending] = useActionState(action, {});
 
   return (
-    <Card className="w-full max-w-sm">
+    <Card className="w-full max-w-sm border-border/70 shadow-2xl shadow-black/40">
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="text-display text-xl">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>

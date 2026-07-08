@@ -155,7 +155,7 @@ export function LibraryView() {
               const slug = slugFor(job.model);
               const thumb = job.assets[0];
               return (
-                <Card key={job.id} className="overflow-hidden py-0 gap-0">
+                <Card key={job.id} className="lift gap-0 overflow-hidden py-0">
                   <Link href={`/jobs/${job.id}`} className="block">
                     <div className="flex aspect-video items-center justify-center bg-muted">
                       {thumb ? (

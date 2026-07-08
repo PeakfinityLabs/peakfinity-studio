@@ -38,8 +38,9 @@ export default async function UsagePage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Usage</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="label-mono mb-2">Usage</p>
+          <h1 className="text-display text-3xl">Spend & activity</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
             Estimated fal spend per model and per editor.
           </p>
         </div>
@@ -61,22 +62,18 @@ export default async function UsagePage({
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total estimated spend
-            </CardTitle>
+            <CardTitle className="label-mono font-normal">Total estimated spend</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">{formatCents(summary.totalCents)}</p>
+            <p className="text-display text-4xl tabular-nums">{formatCents(summary.totalCents)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Completed generations
-            </CardTitle>
+            <CardTitle className="label-mono font-normal">Completed generations</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-semibold">{summary.eventCount}</p>
+            <p className="text-display text-4xl tabular-nums">{summary.eventCount}</p>
           </CardContent>
         </Card>
       </div>
@@ -84,7 +81,7 @@ export default async function UsagePage({
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>By model</CardTitle>
+            <CardTitle className="text-display text-lg">By model</CardTitle>
           </CardHeader>
           <CardContent>
             {summary.byModel.length === 0 ? (
@@ -114,7 +111,7 @@ export default async function UsagePage({
 
         <Card>
           <CardHeader>
-            <CardTitle>By editor</CardTitle>
+            <CardTitle className="text-display text-lg">By editor</CardTitle>
           </CardHeader>
           <CardContent>
             {summary.byUser.length === 0 ? (

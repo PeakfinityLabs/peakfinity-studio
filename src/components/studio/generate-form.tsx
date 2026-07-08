@@ -181,14 +181,15 @@ export function GenerateForm({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="space-y-3 pt-4">
-            <div className="flex items-baseline justify-between">
-              <span className="text-sm text-muted-foreground">Estimated cost</span>
-              <span className="text-lg font-semibold">{formatCents(estimatedCents)}</span>
+        <Card className="sticky top-20">
+          <CardContent className="space-y-4 pt-5">
+            <div>
+              <p className="label-mono mb-1">Estimated cost</p>
+              <p className="text-display text-3xl tabular-nums">{formatCents(estimatedCents)}</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">{def.costNote}</p>
             </div>
-            <p className="text-xs text-muted-foreground">{def.costNote}</p>
             <Button
+              size="lg"
               className="w-full"
               disabled={submitting || promptMissing || requiredUploadMissing}
               onClick={() => void submit()}
@@ -196,7 +197,9 @@ export function GenerateForm({
               {submitting ? "Submitting…" : "Generate"}
             </Button>
             {requiredUploadMissing && (
-              <p className="text-xs text-muted-foreground">Add the required reference first.</p>
+              <p className="text-center text-xs text-muted-foreground">
+                Add the required reference first.
+              </p>
             )}
           </CardContent>
         </Card>

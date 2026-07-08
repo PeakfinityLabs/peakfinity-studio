@@ -6,9 +6,10 @@ export default function LibraryPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Library</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Every generation from the team — filter, re-run, download.
+        <p className="label-mono mb-2">Library</p>
+        <h1 className="text-display text-3xl">Everything the team has made</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Filter by model, type, date or editor — re-run or download any generation.
         </p>
       </div>
       <LibraryView />
