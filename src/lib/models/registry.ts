@@ -8,7 +8,15 @@ export type SelectField = {
   name: string;
   label: string;
   options: readonly string[];
+  /** Friendlier display text per option value; the value sent to fal is unchanged. */
+  optionLabels?: Record<string, string>;
   help?: string;
+};
+
+// Orientation hints for the common ad ratios — value stays the raw ratio.
+export const ASPECT_RATIO_LABELS: Record<string, string> = {
+  "16:9": "16:9 (Landscape)",
+  "9:16": "9:16 (Portrait)",
 };
 export type NumberField = {
   kind: "number";
@@ -107,7 +115,7 @@ const nanoBanana2: ModelDef = {
     "Describe the image, or the edit to apply to the reference images (e.g. \"replace the background with a beach sunset\")…",
   schema: nanoBanana2Schema,
   fields: [
-    { kind: "select", name: "aspect_ratio", label: "Aspect ratio", options: NB2_ASPECT_RATIOS },
+    { kind: "select", name: "aspect_ratio", label: "Aspect ratio", options: NB2_ASPECT_RATIOS, optionLabels: ASPECT_RATIO_LABELS },
     { kind: "select", name: "resolution", label: "Resolution", options: ["0.5K", "1K", "2K", "4K"], help: "Team default is 1K" },
     { kind: "number", name: "num_images", label: "Images", min: 1, max: 4 },
     { kind: "select", name: "output_format", label: "Format", options: ["jpeg", "png", "webp"] },
@@ -304,7 +312,7 @@ const seedance2: ModelDef = {
   fields: [
     { kind: "select", name: "resolution", label: "Resolution", options: ["480p", "720p"] },
     { kind: "select", name: "duration", label: "Duration (s)", options: SEEDANCE_DURATIONS },
-    { kind: "select", name: "aspect_ratio", label: "Aspect ratio", options: SEEDANCE_ASPECT_RATIOS },
+    { kind: "select", name: "aspect_ratio", label: "Aspect ratio", options: SEEDANCE_ASPECT_RATIOS, optionLabels: ASPECT_RATIO_LABELS },
     { kind: "switch", name: "generate_audio", label: "Generate audio" },
     { kind: "number", name: "seed", label: "Seed", min: 0, max: 2147483647, help: "Optional — for reproducibility" },
   ],

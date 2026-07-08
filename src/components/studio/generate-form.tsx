@@ -126,12 +126,18 @@ export function GenerateForm({
                       onValueChange={(value) => set(field.name, value)}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="—" />
+                        <SelectValue placeholder="—">
+                          {(() => {
+                            const v = params[field.name];
+                            if (v === undefined || v === "") return "—";
+                            return field.optionLabels?.[String(v)] ?? String(v);
+                          })()}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {field.options.map((option) => (
                           <SelectItem key={option} value={option}>
-                            {option}
+                            {field.optionLabels?.[option] ?? option}
                           </SelectItem>
                         ))}
                       </SelectContent>
