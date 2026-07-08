@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { apiGuard } from "@/lib/authz";
 import { fal } from "@/lib/fal/client";
 
 export const runtime = "nodejs";
@@ -9,10 +9,8 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024; // Seedance's largest per-file limit (v
 const ALLOWED_PREFIXES = ["image/", "video/", "audio/"];
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const gate = await apiGuard();
+  if (gate instanceof NextResponse) return gate;
 
   const formData = await req.formData();
   const files = formData.getAll("files").filter((f): f is File => f instanceof File);

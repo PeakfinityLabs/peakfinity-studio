@@ -11,10 +11,5 @@ export const registerSchema = z.object({
   password: z.string().min(10, "Password must be at least 10 characters").max(200),
 });
 
-export function allowedEmailDomain(): string {
-  return (process.env.ALLOWED_EMAIL_DOMAIN ?? "peakfinitylabs.com").toLowerCase();
-}
-
-export function isAllowedEmail(email: string): boolean {
-  return email.toLowerCase().endsWith(`@${allowedEmailDomain()}`);
-}
+// Registration is open to any email; access is gated by admin approval instead
+// of by email domain (see src/lib/authz.ts).

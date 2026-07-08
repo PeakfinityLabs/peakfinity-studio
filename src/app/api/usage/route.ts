@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@/auth";
+import { apiGuard } from "@/lib/authz";
 import { getUsageSummary } from "@/lib/usage";
 
 export const runtime = "nodejs";
@@ -10,10 +10,8 @@ const querySchema = z.object({
 });
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const gate = await apiGuard();
+  if (gate instanceof NextResponse) return gate;
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse(Object.fromEntries(url.searchParams));

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { apiGuard } from "@/lib/authz";
 import { getFromR2, r2Configured } from "@/lib/r2";
 
 export const runtime = "nodejs";
@@ -7,10 +7,8 @@ export const runtime = "nodejs";
 const ALLOWED_KEY_PREFIXES = ["outputs/", "inputs/"];
 
 export async function GET(req: Request, { params }: { params: Promise<{ key: string[] }> }) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const gate = await apiGuard();
+  if (gate instanceof NextResponse) return gate;
   if (!r2Configured()) {
     return NextResponse.json({ error: "Object storage is not configured" }, { status: 503 });
   }

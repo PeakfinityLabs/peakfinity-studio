@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@/auth";
+import { apiGuard } from "@/lib/authz";
 import { MODEL_SLUGS } from "@/lib/models/registry";
 import { optimizerProvider } from "@/lib/optimizer/provider";
 import { OPTIMIZER_TEMPLATES } from "@/lib/optimizer/templates";
@@ -14,12 +14,10 @@ const optimizeSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const me = await apiGuard();
+  if (me instanceof NextResponse) return me;
 
-  const limit = checkRateLimit(`optimize:${session.user.id}`, 20, 60_000);
+  const limit = checkRateLimit(`optimize:${me.id}`, 20, 60_000);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: `Rate limit reached — try again in ${limit.retryAfterSeconds}s` },

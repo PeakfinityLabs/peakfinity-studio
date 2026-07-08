@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fal } from "@/lib/fal/client";
 import { isModelSlug, MODELS } from "@/lib/models/registry";
@@ -31,12 +31,10 @@ function collectInputUrls(params: Record<string, unknown>): string[] {
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ model: string }> }) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const me = await apiGuard();
+  if (me instanceof NextResponse) return me;
 
-  const limit = checkRateLimit(`generate:${session.user.id}`, GENERATE_LIMIT, 60_000);
+  const limit = checkRateLimit(`generate:${me.id}`, GENERATE_LIMIT, 60_000);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: `Rate limit reached — try again in ${limit.retryAfterSeconds}s` },
@@ -95,7 +93,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
 
   const job = await prisma.job.create({
     data: {
-      userId: session.user.id,
+      userId: me.id,
       model: def.genModel,
       type: def.type,
       status: "IN_QUEUE",

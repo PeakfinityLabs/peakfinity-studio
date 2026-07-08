@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@/auth";
+import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { GenModel, JobStatus, JobType } from "@/generated/prisma/client";
 
@@ -17,10 +17,8 @@ const listQuerySchema = z.object({
 });
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const me = await apiGuard();
+  if (me instanceof NextResponse) return me;
 
   const url = new URL(req.url);
   const parsed = listQuerySchema.safeParse(Object.fromEntries(url.searchParams));
@@ -31,7 +29,7 @@ export async function GET(req: Request) {
 
   const jobs = await prisma.job.findMany({
     where: {
-      ...(mine === "1" ? { userId: session.user.id } : {}),
+      ...(mine === "1" ? { userId: me.id } : {}),
       ...(model ? { model } : {}),
       ...(type ? { type } : {}),
       ...(status ? { status } : {}),

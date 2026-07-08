@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fal } from "@/lib/fal/client";
 import { parseJobInput } from "@/lib/jobs/types";
@@ -7,17 +7,15 @@ import { parseJobInput } from "@/lib/jobs/types";
 export const runtime = "nodejs";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const me = await apiGuard();
+  if (me instanceof NextResponse) return me;
 
   const { id } = await params;
   const job = await prisma.job.findUnique({ where: { id } });
   if (!job) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
-  if (job.userId !== session.user.id && session.user.role !== "ADMIN") {
+  if (job.userId !== me.id && me.role !== "ADMIN") {
     return NextResponse.json({ error: "You can only cancel your own jobs" }, { status: 403 });
   }
   if (job.status !== "IN_QUEUE" && job.status !== "IN_PROGRESS") {

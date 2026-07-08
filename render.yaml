@@ -25,8 +25,8 @@ services:
         sync: false
       - key: APP_BASE_URL
         sync: false
-      - key: ALLOWED_EMAIL_DOMAIN
-        value: peakfinitylabs.com
+      - key: ADMIN_EMAILS
+        value: team@peakfinitylabs.com,rahul@peakfinitylabs.com,jonahberry88@gmail.com
       - key: FAL_KEY
         sync: false
       - key: ANTHROPIC_API_KEY

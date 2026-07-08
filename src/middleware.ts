@@ -17,20 +17,25 @@ export default auth((req) => {
   return NextResponse.redirect(loginUrl);
 });
 
-// Everything matched here requires a session. /api/fal/webhook, /api/auth/* and
-// /api/health are intentionally NOT matched (fal calls the webhook unauthenticated;
-// its requests are verified by signature instead).
+// Everything matched here requires a session (login only — approval and admin
+// role are enforced in the Node runtime by the app shell and route handlers,
+// since middleware runs on the edge and can't reach Prisma). /api/fal/webhook,
+// /api/auth/* and /api/health are intentionally NOT matched (fal calls the
+// webhook unauthenticated; its requests are verified by signature instead).
 export const config = {
   matcher: [
     "/studio/:path*",
     "/library/:path*",
     "/usage/:path*",
     "/jobs/:path*",
+    "/admin/:path*",
+    "/pending",
     "/api/generate/:path*",
     "/api/jobs/:path*",
     "/api/optimize/:path*",
     "/api/upload/:path*",
     "/api/usage/:path*",
     "/api/media/:path*",
+    "/api/admin/:path*",
   ],
 };

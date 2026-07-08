@@ -12,6 +12,12 @@ enum Role {
   ADMIN
 }
 
+enum UserStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
 enum GenModel {
   NANO_BANANA_2
   GPT_IMAGE_2
@@ -38,14 +44,19 @@ enum AssetKind {
 }
 
 model User {
-  id           String       @id @default(cuid())
-  email        String       @unique
-  name         String
-  passwordHash String
-  role         Role         @default(EDITOR)
-  createdAt    DateTime     @default(now())
-  jobs         Job[]
-  usageEvents  UsageEvent[]
+  id              String       @id @default(cuid())
+  email           String       @unique
+  name            String
+  passwordHash    String
+  role            Role         @default(EDITOR)
+  status          UserStatus   @default(PENDING)
+  reviewedAt      DateTime?
+  reviewedByEmail String?
+  createdAt       DateTime     @default(now())
+  jobs            Job[]
+  usageEvents     UsageEvent[]
+
+  @@index([status, createdAt])
 }
 
 model Job {

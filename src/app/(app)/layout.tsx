@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
-import { auth, signOut } from "@/auth";
+import { signOut } from "@/auth";
+import { getSessionUser } from "@/lib/authz";
+import { prisma } from "@/lib/db";
 import { MainNav } from "@/components/app/main-nav";
 import { Wordmark } from "@/components/brand/wordmark";
 import {
@@ -19,10 +21,14 @@ function initials(nameOrEmail: string): string {
 }
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  // Read fresh from the DB, not the JWT — an admin may have just changed status.
+  const me = await getSessionUser();
+  if (!me) redirect("/login");
+  if (me.status !== "APPROVED") redirect("/pending");
 
-  const displayName = session.user.name ?? session.user.email ?? "Account";
+  const isAdmin = me.role === "ADMIN";
+  const pendingCount = isAdmin ? await prisma.user.count({ where: { status: "PENDING" } }) : 0;
+  const displayName = me.name ?? me.email;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -30,7 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-6 px-4">
           <Wordmark />
           <div className="ml-2">
-            <MainNav />
+            <MainNav isAdmin={isAdmin} pendingCount={pendingCount} />
           </div>
           <div className="ml-auto">
             <DropdownMenu>
@@ -46,9 +52,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               />
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel className="flex flex-col gap-0.5">
-                  <span className="font-medium">{session.user.name ?? "Editor"}</span>
+                  <span className="font-medium">
+                    {me.name}
+                    {isAdmin ? <span className="ml-1.5 text-xs text-muted-foreground">Admin</span> : null}
+                  </span>
                   <span className="font-mono text-xs font-normal text-muted-foreground">
-                    {session.user.email}
+                    {me.email}
                   </span>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />

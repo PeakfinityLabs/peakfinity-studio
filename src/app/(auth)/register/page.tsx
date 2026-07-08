@@ -7,7 +7,7 @@ export default function RegisterPage() {
   return (
     <AuthForm
       title="Create your account"
-      description="Registration is limited to @peakfinitylabs.com email addresses."
+      description="Anyone can register — an admin approves access before you can generate."
       action={registerAction}
       fields={[
         { name: "name", label: "Name", type: "text", placeholder: "Your name", autoComplete: "name" },

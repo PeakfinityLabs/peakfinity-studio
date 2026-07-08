@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fal } from "@/lib/fal/client";
 import { falErrorMessage, isFalValidationError } from "@/lib/fal/errors";
@@ -22,10 +22,8 @@ async function loadJob(id: string) {
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const gate = await apiGuard();
+  if (gate instanceof NextResponse) return gate;
 
   const { id } = await params;
   let job = await loadJob(id);
