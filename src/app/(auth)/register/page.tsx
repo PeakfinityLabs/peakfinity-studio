@@ -13,9 +13,9 @@ export default function RegisterPage() {
         { name: "name", label: "Name", type: "text", placeholder: "Your name", autoComplete: "name" },
         {
           name: "email",
-          label: "Work email",
+          label: "Email",
           type: "email",
-          placeholder: "you@peakfinitylabs.com",
+          placeholder: "you@example.com",
           autoComplete: "email",
         },
         {

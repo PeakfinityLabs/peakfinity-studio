@@ -26,7 +26,7 @@ export function AuthForm({
   callbackUrl,
 }: {
   title: string;
-  description: string;
+  description?: string;
   action: (state: AuthFormState, formData: FormData) => Promise<AuthFormState>;
   fields: Field[];
   submitLabel: string;
@@ -39,7 +39,7 @@ export function AuthForm({
     <Card className="w-full max-w-sm border-border/70 shadow-2xl shadow-black/40">
       <CardHeader>
         <CardTitle className="text-display text-xl">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
       <CardContent>
         <form action={formAction} className="space-y-4">

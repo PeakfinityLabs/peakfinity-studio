@@ -13,7 +13,6 @@ export default async function LoginPage({
   return (
     <AuthForm
       title="Sign in"
-      description="Use your Peakfinity Labs account."
       action={loginAction}
       callbackUrl={callbackUrl}
       fields={[
@@ -21,7 +20,7 @@ export default async function LoginPage({
           name: "email",
           label: "Email",
           type: "email",
-          placeholder: "you@peakfinitylabs.com",
+          placeholder: "you@example.com",
           autoComplete: "email",
         },
         { name: "password", label: "Password", type: "password", autoComplete: "current-password" },
