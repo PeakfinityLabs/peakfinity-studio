@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { fal } from "@/lib/fal/client";
+import { falErrorMessage, isFalValidationError } from "@/lib/fal/errors";
 import { completeJob, failJob } from "@/lib/jobs/complete";
 import { parseJobInput } from "@/lib/jobs/types";
 import type { Prisma } from "@/generated/prisma/client";
@@ -46,8 +47,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       });
 
       if (status.status === "COMPLETED") {
-        const result = await fal.queue.result(endpoint, { requestId: job.falRequestId });
-        await completeJob(job.id, result.data);
+        // fal reports COMPLETED even when the generation itself failed — the
+        // stored response can be a 422. Surface that as a FAILED job instead
+        // of polling forever.
+        try {
+          const result = await fal.queue.result(endpoint, { requestId: job.falRequestId });
+          await completeJob(job.id, result.data);
+        } catch (error) {
+          if (isFalValidationError(error)) {
+            await failJob(job.id, falErrorMessage(error));
+          } else {
+            throw error;
+          }
+        }
         job = (await loadJob(id))!;
       } else {
         if ("queue_position" in status && typeof status.queue_position === "number") {

@@ -12,6 +12,7 @@
  *
  * SPENDS REAL MONEY on the fal account. Video legs are opt-in for that reason.
  */
+import { deflateSync } from "node:zlib";
 import { config } from "dotenv";
 
 config({ path: ".env.local" });
@@ -32,9 +33,45 @@ const POLL_INTERVAL_MS = 4000;
 const IMAGE_TIMEOUT_MS = 4 * 60 * 1000;
 const VIDEO_TIMEOUT_MS = 15 * 60 * 1000;
 
-// 64x64 red PNG — used as an uploaded reference / video start frame.
-const TINY_PNG_BASE64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAUElEQVR4nO3PsQ0AIAzAsML/P5cXOnaJlD2z98GAOgCoA4A6AKgDgDoAqAOAOgCoA4A6AKgDgDoAqAOAOgCoA4A6AKgDgDoAqAOAOgCoDXwBBQMBOJm6nQAAAABJRU5ErkJggg==";
+// Builds a valid solid-color PNG at runtime (proper CRCs + zlib IDAT), used as
+// an uploaded reference / video start frame. 512x512 keeps video models happy.
+function buildPng(width: number, height: number, rgb: [number, number, number]): Buffer {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc32 = (buf: Buffer) => {
+    let c = 0xffffffff;
+    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type: string, data: Buffer) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // color type: truecolor RGB
+
+  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3)]);
+  for (let x = 0; x < width; x++) row.set(rgb, 1 + x * 3);
+  const idat = deflateSync(Buffer.concat(Array.from({ length: height }, () => row)));
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", idat),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
 
 class Cookies {
   private jar = new Map<string, string>();
@@ -91,9 +128,9 @@ async function signIn(): Promise<void> {
 }
 
 async function uploadReferenceImage(): Promise<string> {
-  const bytes = Buffer.from(TINY_PNG_BASE64, "base64");
+  const bytes = buildPng(512, 512, [200, 30, 30]);
   const formData = new FormData();
-  formData.append("files", new File([bytes], "smoke.png", { type: "image/png" }));
+  formData.append("files", new File([new Uint8Array(bytes)], "smoke.png", { type: "image/png" }));
   const res = await request("/api/upload", { method: "POST", body: formData });
   const data = await readJson<{ files?: Array<{ url: string }>; error?: string }>(res, "Upload");
   if (!res.ok || !data.files?.[0]) throw new Error(`Upload failed: ${data.error ?? res.status}`);
