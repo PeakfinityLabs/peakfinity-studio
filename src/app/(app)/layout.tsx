@@ -1,13 +1,13 @@
 import { redirect } from "next/navigation";
-import { signOut } from "@/auth";
 import { getSessionUser } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { MainNav } from "@/components/app/main-nav";
+import { SignOutItem } from "@/components/app/sign-out-item";
 import { Wordmark } from "@/components/brand/wordmark";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -51,26 +51,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 }
               />
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel className="flex flex-col gap-0.5">
-                  <span className="font-medium">
-                    {me.name}
-                    {isAdmin ? <span className="ml-1.5 text-xs text-muted-foreground">Admin</span> : null}
-                  </span>
-                  <span className="font-mono text-xs font-normal text-muted-foreground">
-                    {me.email}
-                  </span>
-                </DropdownMenuLabel>
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="flex flex-col gap-0.5">
+                    <span className="font-medium">
+                      {me.name}
+                      {isAdmin ? (
+                        <span className="ml-1.5 text-xs text-muted-foreground">Admin</span>
+                      ) : null}
+                    </span>
+                    <span className="font-mono text-xs font-normal text-muted-foreground">
+                      {me.email}
+                    </span>
+                  </DropdownMenuLabel>
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
-                <form
-                  action={async () => {
-                    "use server";
-                    await signOut({ redirectTo: "/login" });
-                  }}
-                >
-                  <DropdownMenuItem render={<button type="submit" className="w-full" />}>
-                    Sign out
-                  </DropdownMenuItem>
-                </form>
+                <SignOutItem />
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
