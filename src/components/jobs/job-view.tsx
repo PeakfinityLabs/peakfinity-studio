@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCents, MODEL_SLUGS, MODELS } from "@/lib/models/registry";
+import { FAL_MEDIA_RETENTION_DAYS, isMediaExpired } from "@/lib/media";
 
 const POLL_MS = 3000;
 const OPEN_STATUSES = ["IN_QUEUE", "IN_PROGRESS"];
@@ -192,35 +193,56 @@ export function JobView({ jobId }: { jobId: string }) {
       )}
 
       {outputs.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {outputs.map((asset) => (
-            <Card key={asset.id} className="overflow-hidden">
-              <CardContent className="space-y-2 p-2">
-                {asset.contentType.startsWith("video/") ? (
-                  <video src={asset.url} controls className="w-full rounded-md" />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={asset.url} alt={job.prompt} className="w-full rounded-md" />
-                )}
-                <div className="flex items-center justify-between px-1 pb-1">
-                  <span className="text-xs text-muted-foreground">
-                    {asset.width && asset.height ? `${asset.width}×${asset.height}` : asset.contentType}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    nativeButton={false}
-                    render={
-                      <a href={asset.url} download>
-                        Download
-                      </a>
-                    }
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <>
+          {outputs.some((a) => !a.url.startsWith("/api/media/")) &&
+            !outputs.some((a) => isMediaExpired(job.completedAt, a.url)) && (
+              <p className="text-xs text-muted-foreground">
+                Download what you want to keep — fal removes generated files after ~
+                {FAL_MEDIA_RETENTION_DAYS} days.
+              </p>
+            )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {outputs.map((asset) => {
+              const expired = isMediaExpired(job.completedAt, asset.url);
+              return (
+                <Card key={asset.id} className="overflow-hidden">
+                  <CardContent className="space-y-2 p-2">
+                    {expired ? (
+                      <div className="flex aspect-video items-center justify-center rounded-md bg-muted px-4 text-center text-sm text-muted-foreground">
+                        Media expired — fal keeps generated files ~{FAL_MEDIA_RETENTION_DAYS} days.
+                        Re-run the job to regenerate.
+                      </div>
+                    ) : asset.contentType.startsWith("video/") ? (
+                      <video src={asset.url} controls className="w-full rounded-md" />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={asset.url} alt={job.prompt} className="w-full rounded-md" />
+                    )}
+                    <div className="flex items-center justify-between px-1 pb-1">
+                      <span className="text-xs text-muted-foreground">
+                        {asset.width && asset.height
+                          ? `${asset.width}×${asset.height}`
+                          : asset.contentType}
+                      </span>
+                      {!expired && (
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          nativeButton={false}
+                          render={
+                            <a href={asset.url} download>
+                              Download
+                            </a>
+                          }
+                        />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );

@@ -11,7 +11,10 @@ self-hosted wrapper so we only pay fal's per-generation cost.
 - **Auth.js (NextAuth v5)** — credentials provider, JWT cookie sessions, registration
   restricted to `@peakfinitylabs.com`
 - **fal.ai** via `@fal-ai/client` — all calls server-side; the queue API + webhooks
-- **Cloudflare R2** for persisting generated media (fal output URLs expire)
+- **Media storage**: fal's CDN by default — fal retains generated files **~7 days**, so
+  editors download what they want to keep (the UI reminds them and marks expired media).
+  Setting the optional `R2_*` env vars flips on permanent, private persistence to
+  Cloudflare R2 with no code changes.
 - **Anthropic Claude** for the prompt optimizer (provider swappable)
 
 ## Models

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCents, MODEL_SLUGS, MODELS } from "@/lib/models/registry";
+import { isMediaExpired } from "@/lib/media";
 
 type LibraryJob = {
   id: string;
@@ -24,6 +25,7 @@ type LibraryJob = {
   optimizedPrompt: string | null;
   estimatedCostCents: number;
   createdAt: string;
+  completedAt: string | null;
   user: { id: string; name: string };
   assets: Array<{ id: string; url: string; contentType: string }>;
 };
@@ -157,7 +159,11 @@ export function LibraryView() {
                   <Link href={`/jobs/${job.id}`} className="block">
                     <div className="flex aspect-video items-center justify-center bg-muted">
                       {thumb ? (
-                        thumb.contentType.startsWith("video/") ? (
+                        isMediaExpired(job.completedAt, thumb.url) ? (
+                          <span className="px-4 text-center text-xs text-muted-foreground">
+                            media expired — re-run to regenerate
+                          </span>
+                        ) : thumb.contentType.startsWith("video/") ? (
                           <video src={thumb.url} muted playsInline className="h-full w-full object-cover" />
                         ) : (
                           // eslint-disable-next-line @next/next/no-img-element
