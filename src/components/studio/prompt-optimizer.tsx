@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { fetchJson } from "@/lib/http";
 import { MODELS, type ModelSlug } from "@/lib/models/registry";
 import { OPTIMIZER_PRESETS, PRESET_META, type OptimizerPreset } from "@/lib/optimizer/templates";
 
@@ -50,13 +51,11 @@ export function PromptOptimizer({
     }
     setBusy(true);
     try {
-      const res = await fetch("/api/optimize", {
+      const data = await fetchJson<{ optimizedPrompt: string }>("/api/optimize", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt, model: slug, preset }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Optimization failed");
       setProposal({ original: prompt, optimized: data.optimizedPrompt });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Optimization failed");

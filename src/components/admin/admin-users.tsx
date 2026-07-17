@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { fetchJson } from "@/lib/http";
 
 export type AdminUserRow = {
   id: string;
@@ -40,13 +41,11 @@ export function AdminUsers({ users }: { users: AdminUserRow[] }) {
   const act = async (id: string, kind: "status" | "role", value: string) => {
     setBusyId(id);
     try {
-      const res = await fetch(`/api/admin/users/${id}/${kind}`, {
+      await fetchJson(`/api/admin/users/${id}/${kind}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(kind === "status" ? { status: value } : { role: value }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Action failed");
       toast.success("Updated");
       router.refresh();
     } catch (error) {

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { fetchJson } from "@/lib/http";
 import { formatCents, MODEL_SLUGS, MODELS } from "@/lib/models/registry";
 import { FAL_MEDIA_RETENTION_DAYS, isMediaExpired } from "@/lib/media";
 
@@ -84,11 +85,17 @@ export function JobView({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchJob = useCallback(async () => {
-    const res = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
-    if (!res.ok) return;
-    const data = await res.json();
-    setJob(data.job);
-    if (OPEN_STATUSES.includes(data.job.status)) {
+    let status: string | undefined;
+    try {
+      const data = await fetchJson<{ job: JobData }>(`/api/jobs/${jobId}`, { cache: "no-store" });
+      setJob(data.job);
+      status = data.job.status;
+    } catch {
+      // Transient error (server restart, blip) — keep polling so the job still
+      // resolves once the server is back, rather than stalling.
+      status = "IN_PROGRESS";
+    }
+    if (status && OPEN_STATUSES.includes(status)) {
       timer.current = setTimeout(() => void fetchJob(), POLL_MS);
     }
   }, [jobId]);
@@ -103,9 +110,7 @@ export function JobView({
   const cancel = async () => {
     setCancelling(true);
     try {
-      const res = await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not cancel");
+      await fetchJson(`/api/jobs/${jobId}/cancel`, { method: "POST" });
       toast.success("Job cancelled");
       void fetchJob();
     } catch (error) {
@@ -119,9 +124,7 @@ export function JobView({
     if (!window.confirm("Delete this generation? This can't be undone.")) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/jobs/${jobId}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not delete");
+      await fetchJson(`/api/jobs/${jobId}`, { method: "DELETE" });
       toast.success("Generation deleted");
       router.push("/library");
     } catch (error) {

@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { fetchJson } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import type { UploaderDef } from "@/lib/models/registry";
 
@@ -34,10 +35,11 @@ export function ReferenceUploader({
       try {
         const formData = new FormData();
         for (const file of selected) formData.append("files", file);
-        const res = await fetch("/api/upload", { method: "POST", body: formData });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Upload failed");
-        const uploaded = data.files as UploadedFile[];
+        const data = await fetchJson<{ files: UploadedFile[] }>("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+        const uploaded = data.files;
         setFiles((prev) => [...prev, ...uploaded]);
         onChange([...urls, ...uploaded.map((f) => f.url)]);
       } catch (error) {

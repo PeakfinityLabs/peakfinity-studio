@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ReferenceUploader } from "@/components/studio/reference-uploader";
 import { PromptOptimizer } from "@/components/studio/prompt-optimizer";
+import { fetchJson } from "@/lib/http";
 import { formatCents, MODELS, type ModelSlug } from "@/lib/models/registry";
 
 export function GenerateForm({
@@ -48,13 +49,11 @@ export function GenerateForm({
       if (originalPrompt && originalPrompt !== params.prompt) {
         body._originalPrompt = originalPrompt;
       }
-      const res = await fetch(`/api/generate/${slug}`, {
+      const data = await fetchJson<{ jobId: string }>(`/api/generate/${slug}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Generation failed to submit");
       router.push(`/jobs/${data.jobId}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Generation failed to submit");

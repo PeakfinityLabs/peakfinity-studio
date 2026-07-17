@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { fetchJson } from "@/lib/http";
 import { formatCents, MODEL_SLUGS, MODELS } from "@/lib/models/registry";
 import { isMediaExpired } from "@/lib/media";
 
@@ -30,6 +31,8 @@ type LibraryJob = {
   user: { id: string; name: string };
   assets: Array<{ id: string; url: string; contentType: string }>;
 };
+
+type JobsResponse = { jobs: LibraryJob[]; nextCursor: string | null };
 
 const MODEL_FILTERS = [
   { value: "all", label: "All models" },
@@ -84,8 +87,7 @@ export function LibraryView({
   useEffect(() => {
     let cancelled = false;
     setJobs(null);
-    fetch(query())
-      .then((res) => res.json())
+    fetchJson<JobsResponse>(query())
       .then((data) => {
         if (cancelled) return;
         setJobs(data.jobs ?? []);
@@ -101,10 +103,11 @@ export function LibraryView({
     if (!nextCursor) return;
     setLoadingMore(true);
     try {
-      const res = await fetch(query(nextCursor));
-      const data = await res.json();
+      const data = await fetchJson<JobsResponse>(query(nextCursor));
       setJobs((prev) => [...(prev ?? []), ...(data.jobs ?? [])]);
       setNextCursor(data.nextCursor ?? null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load more");
     } finally {
       setLoadingMore(false);
     }
@@ -117,9 +120,7 @@ export function LibraryView({
     if (!window.confirm("Delete this generation? This can't be undone.")) return;
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Delete failed");
+      await fetchJson(`/api/jobs/${id}`, { method: "DELETE" });
       setJobs((prev) => (prev ?? []).filter((j) => j.id !== id));
       toast.success("Generation deleted");
     } catch (error) {
