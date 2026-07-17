@@ -12,7 +12,16 @@ export async function POST(req: Request) {
   const gate = await apiGuard();
   if (gate instanceof NextResponse) return gate;
 
-  const formData = await req.formData();
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    // A body truncated at the middleware size cap fails to parse as multipart.
+    return NextResponse.json(
+      { error: `Upload too large or malformed — each file must be under ${MAX_FILE_BYTES / 1024 / 1024}MB.` },
+      { status: 413 }
+    );
+  }
   const files = formData.getAll("files").filter((f): f is File => f instanceof File);
 
   if (files.length === 0) {

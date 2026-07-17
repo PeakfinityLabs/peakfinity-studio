@@ -33,13 +33,19 @@ export function ReferenceUploader({
       }
       setUploading(true);
       try {
-        const formData = new FormData();
-        for (const file of selected) formData.append("files", file);
-        const data = await fetchJson<{ files: UploadedFile[] }>("/api/upload", {
-          method: "POST",
-          body: formData,
-        });
-        const uploaded = data.files;
+        // Upload one file per request so a large multi-file selection never
+        // becomes a single oversized body (each request stays within the
+        // server's per-file limit).
+        const uploaded: UploadedFile[] = [];
+        for (const file of selected) {
+          const formData = new FormData();
+          formData.append("files", file);
+          const data = await fetchJson<{ files: UploadedFile[] }>("/api/upload", {
+            method: "POST",
+            body: formData,
+          });
+          uploaded.push(...data.files);
+        }
         setFiles((prev) => [...prev, ...uploaded]);
         onChange([...urls, ...uploaded.map((f) => f.url)]);
       } catch (error) {
