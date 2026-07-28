@@ -49,6 +49,10 @@ model User {
   name            String
   passwordHash    String
   role            Role         @default(EDITOR)
+  /// Descriptive job title (Editor, Strategist, …) — display only, never
+  /// affects permissions. Free-form string so the option list can change in
+  /// code (lib/job-titles.ts) without a migration.
+  jobTitle        String?
   status          UserStatus   @default(PENDING)
   reviewedAt      DateTime?
   reviewedByEmail String?

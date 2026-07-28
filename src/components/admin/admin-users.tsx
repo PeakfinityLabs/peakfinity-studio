@@ -7,6 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -15,12 +22,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { fetchJson } from "@/lib/http";
+import { JOB_TITLES, NO_JOB_TITLE } from "@/lib/job-titles";
 
 export type AdminUserRow = {
   id: string;
   name: string;
   email: string;
   role: "ADMIN" | "EDITOR";
+  jobTitle: string | null;
   status: "PENDING" | "APPROVED" | "DENIED";
   createdAt: string;
   reviewedByEmail: string | null;
@@ -50,6 +59,23 @@ export function AdminUsers({ users }: { users: AdminUserRow[] }) {
       router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Action failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const setTitle = async (id: string, value: string) => {
+    setBusyId(id);
+    try {
+      await fetchJson(`/api/admin/users/${id}/title`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jobTitle: value === NO_JOB_TITLE ? null : value }),
+      });
+      toast.success("Job title updated");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not set job title");
     } finally {
       setBusyId(null);
     }
@@ -118,6 +144,7 @@ export function AdminUsers({ users }: { users: AdminUserRow[] }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>User</TableHead>
+                  <TableHead>Job title</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Joined</TableHead>
@@ -135,6 +162,29 @@ export function AdminUsers({ users }: { users: AdminUserRow[] }) {
                         )}
                       </div>
                       <span className="font-mono text-xs text-muted-foreground">{u.email}</span>
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={u.jobTitle ?? NO_JOB_TITLE}
+                        onValueChange={(v) => void setTitle(u.id, v ?? NO_JOB_TITLE)}
+                        disabled={busyId === u.id}
+                      >
+                        <SelectTrigger size="sm" className="w-40">
+                          <SelectValue>
+                            {u.jobTitle ?? (
+                              <span className="text-muted-foreground">No title</span>
+                            )}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NO_JOB_TITLE}>No title</SelectItem>
+                          {JOB_TITLES.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     <TableCell>
                       <Badge variant={u.role === "ADMIN" ? "default" : "secondary"}>

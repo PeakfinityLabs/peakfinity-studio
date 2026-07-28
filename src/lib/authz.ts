@@ -9,6 +9,8 @@ export type SessionUser = {
   email: string;
   name: string;
   role: Role;
+  /** Descriptive only — never used for access decisions. */
+  jobTitle: string | null;
   status: UserStatus;
 };
 
@@ -35,7 +37,14 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!id) return null;
   return prisma.user.findUnique({
     where: { id },
-    select: { id: true, email: true, name: true, role: true, status: true },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      jobTitle: true,
+      status: true,
+    },
   });
 }
 

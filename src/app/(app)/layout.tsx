@@ -59,6 +59,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                         <span className="ml-1.5 text-xs text-muted-foreground">Admin</span>
                       ) : null}
                     </span>
+                    {me.jobTitle ? (
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {me.jobTitle}
+                      </span>
+                    ) : null}
                     <span className="font-mono text-xs font-normal text-muted-foreground">
                       {me.email}
                     </span>
