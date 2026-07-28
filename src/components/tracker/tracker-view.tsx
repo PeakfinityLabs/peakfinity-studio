@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CreativeDialog } from "@/components/tracker/creative-dialog";
+import { ImportDialog } from "@/components/tracker/import-dialog";
 import { fetchJson } from "@/lib/http";
 import {
   CREATIVE_PAGES,
@@ -104,6 +105,7 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
     page: ALL,
   });
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<CreativeRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -250,15 +252,20 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
             Export CSV
           </Button>
           {isAdmin && (
-            <Button
-              size="sm"
-              onClick={() => {
-                setEditing(null);
-                setDialogOpen(true);
-              }}
-            >
-              + New creative
-            </Button>
+            <>
+              <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+                Import CSV
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditing(null);
+                  setDialogOpen(true);
+                }}
+              >
+                + New creative
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -399,6 +406,15 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
         defaultMonth={filters.month === ALL ? currentMonth() : filters.month}
         onSaved={() => void load()}
       />
+
+      {isAdmin && (
+        <ImportDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          defaultMonth={filters.month === ALL ? currentMonth() : filters.month}
+          onImported={() => void load()}
+        />
+      )}
     </div>
   );
 }
