@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 const baseLinks = [
   { href: "/studio", label: "Studio" },
   { href: "/library", label: "Library" },
+  // Editors see only their own assignments here; admins see everything.
+  { href: "/tracker", label: "Tracker" },
 ];
 
 // Usage (team spend) and Admin are admin-only.

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getSessionUser, isAdminEmail } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { getUsageSummary } from "@/lib/usage";
@@ -55,12 +56,23 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <p className="label-mono mb-2">Admin</p>
-        <h1 className="text-display text-3xl">Access &amp; administration</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Approve new sign-ups, manage roles, and keep an eye on platform activity.
-        </p>
+      <div className="flex flex-wrap items-end gap-4">
+        <div>
+          <p className="label-mono mb-2">Admin</p>
+          <h1 className="text-display text-3xl">Access &amp; administration</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Approve new sign-ups, manage roles, and keep an eye on platform activity.
+          </p>
+        </div>
+        <Link
+          href="/tracker"
+          className="lift ml-auto rounded-xl border bg-card px-4 py-3 text-sm"
+        >
+          <span className="label-mono block">Creative tracker</span>
+          <span className="mt-1 block font-medium">
+            Brief &amp; track creative <span className="text-muted-foreground">→</span>
+          </span>
+        </Link>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

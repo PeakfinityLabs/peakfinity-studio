@@ -43,6 +43,23 @@ enum AssetKind {
   OUTPUT
 }
 
+/// Creative tracker pipeline, mirroring the team's previous spreadsheet.
+/// BACKLOG stands in for the sheet's blank Status cell.
+enum CreativeStatus {
+  BACKLOG
+  SCRIPTING
+  EDITING
+  NEEDS_REVIEW
+  NEEDS_REVISION
+  READY
+}
+
+enum CreativePriority {
+  NORMAL
+  IMPORTANT
+  URGENT
+}
+
 model User {
   id              String       @id @default(cuid())
   email           String       @unique
@@ -59,8 +76,42 @@ model User {
   createdAt       DateTime     @default(now())
   jobs            Job[]
   usageEvents     UsageEvent[]
+  creatives       Creative[]   @relation("CreativeEditor")
 
   @@index([status, createdAt])
+}
+
+/// One row of the creative tracker (previously a row in the team's Google Sheet).
+model Creative {
+  id            String           @id @default(cuid())
+  /// "2026-07" — replaces the sheet's monthly tabs.
+  month         String
+  lp            String?
+  page          String?
+  strategist    String?
+  title         String
+  briefLink     String?
+  /// Editor name as typed (people in the sheet may not have accounts yet);
+  /// editorUserId links the row to an app user when they do.
+  editor        String?
+  editorUserId  String?
+  editorUser    User?            @relation("CreativeEditor", fields: [editorUserId], references: [id], onDelete: SetNull)
+  videoLink     String?
+  contentNeeded Boolean          @default(true)
+  status        CreativeStatus   @default(BACKLOG)
+  priority      CreativePriority @default(NORMAL)
+  aiModel       String?
+  generations   Int?
+  launchedAt    DateTime?
+  cogScore      Int?
+  isWinner      Boolean          @default(false)
+  notes         String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([month, createdAt])
+  @@index([editorUserId])
+  @@index([status])
 }
 
 model Job {
