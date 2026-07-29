@@ -1,7 +1,12 @@
 /**
- * Assignable job titles. Purely descriptive — they never affect permissions
- * (that's `role`: EDITOR vs ADMIN). Add or rename freely; the column is a
- * plain string, so no migration is needed.
+ * Assignable job titles. App access (Studio, Library, Usage, Admin) is governed
+ * by `role` (EDITOR vs ADMIN), never by these.
+ *
+ * ONE EXCEPTION: in the creative tracker, "Strategist" grants visibility of the
+ * whole board and permission to edit every field — see trackerCaps() in
+ * lib/creatives.ts. Keep that in mind when assigning it or adding new titles.
+ *
+ * Add or rename freely otherwise; the column is a plain string, no migration.
  */
 export const JOB_TITLES = [
   "Editor",

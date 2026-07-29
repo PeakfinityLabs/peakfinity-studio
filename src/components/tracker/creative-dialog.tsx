@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { CreativeHistory } from "@/components/tracker/creative-history";
 import { fetchJson } from "@/lib/http";
 import {
   AI_MODELS,
@@ -179,6 +180,7 @@ export function CreativeDialog({
             lp: clean(form.lp),
             page: clean(form.page),
             strategist: clean(form.strategist),
+            strategistUserId: clean(form.strategistUserId),
             briefLink: clean(form.briefLink),
             editor: clean(form.editor),
             editorUserId: clean(form.editorUserId),
@@ -483,15 +485,25 @@ export function CreativeDialog({
             </>
           )}
 
+          {/* Notes are only sent when the user is actually allowed to save
+              them — otherwise show them read-only rather than pretending. */}
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="notes">Notes</Label>
-            <Textarea
-              id="notes"
-              rows={2}
-              value={String(form.notes ?? "")}
-              onChange={(e) => set("notes", e.target.value)}
-            />
+            {canEditAll || isNew ? (
+              <Textarea
+                id="notes"
+                rows={2}
+                value={String(form.notes ?? "")}
+                onChange={(e) => set("notes", e.target.value)}
+              />
+            ) : (
+              <p className="min-h-9 rounded-md border bg-muted/40 p-2 text-sm whitespace-pre-wrap text-muted-foreground">
+                {form.notes || "—"}
+              </p>
+            )}
           </div>
+
+          {creative && <CreativeHistory creativeId={creative.id} />}
         </div>
 
         <DialogFooter>

@@ -9,7 +9,12 @@ export type SessionUser = {
   email: string;
   name: string;
   role: Role;
-  /** Descriptive only — never used for access decisions. */
+  /**
+   * Display title (Editor, Strategist, …). Cosmetic everywhere EXCEPT the
+   * creative tracker, where "Strategist" grants full board visibility — see
+   * trackerCaps() in lib/creatives.ts. It never affects Studio, Library,
+   * Usage or Admin access; those key off `role` alone.
+   */
   jobTitle: string | null;
   status: UserStatus;
 };

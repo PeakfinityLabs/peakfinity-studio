@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +43,12 @@ export function ImportDialog({
   const [month, setMonth] = useState(defaultMonth || currentMonth());
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<ImportResult | null>(null);
+
+  // The dialog stays mounted, so the initial state would freeze the month
+  // chosen at first render. Re-sync whenever it's opened.
+  useEffect(() => {
+    if (open) setMonth(defaultMonth || currentMonth());
+  }, [open, defaultMonth]);
 
   const reset = () => {
     setCsv("");

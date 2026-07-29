@@ -66,9 +66,9 @@ model User {
   name            String
   passwordHash    String
   role            Role         @default(EDITOR)
-  /// Descriptive job title (Editor, Strategist, …) — display only, never
-  /// affects permissions. Free-form string so the option list can change in
-  /// code (lib/job-titles.ts) without a migration.
+  /// Job title (Editor, Strategist, …). Cosmetic except in the creative
+  /// tracker, where "Strategist" grants full board access (see trackerCaps()).
+  /// Free-form string so the option list can change in code without a migration.
   jobTitle        String?
   status          UserStatus   @default(PENDING)
   reviewedAt      DateTime?

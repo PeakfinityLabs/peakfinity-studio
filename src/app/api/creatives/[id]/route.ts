@@ -33,8 +33,10 @@ const patchSchema = z.object({
 const EDITOR_FIELDS = new Set<string>(EDITOR_EDITABLE_FIELDS);
 
 function isAssignedTo(creative: Creative, me: SessionUser): boolean {
-  if (creative.editorUserId && creative.editorUserId === me.id) return true;
+  if (creative.editorUserId) return creative.editorUserId === me.id;
   if (creative.createdById === me.id) return true;
+  // Name fallback only for unlinked legacy rows — User.name isn't unique, so
+  // this must never override an explicit assignment.
   return Boolean(creative.editor && creative.editor.toLowerCase() === me.name.toLowerCase());
 }
 

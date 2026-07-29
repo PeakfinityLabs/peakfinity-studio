@@ -97,15 +97,22 @@ export function mapHeaders(header: string[]): Record<string, number> {
 export function parseSheetDate(raw: string): Date | null {
   const s = raw.trim();
   if (!s) return null;
+
+  // Reject out-of-range parts rather than letting Date roll over: "24/07/2026"
+  // (a non-US export) would otherwise silently become December 2027.
+  const build = (y: number, m: number, d: number): Date | null => {
+    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+    const date = new Date(Date.UTC(y, m - 1, d, 12));
+    return date.getUTCMonth() === m - 1 && date.getUTCDate() === d ? date : null;
+  };
+
   const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (us) {
     const year = us[3].length === 2 ? 2000 + Number(us[3]) : Number(us[3]);
-    return new Date(Date.UTC(year, Number(us[1]) - 1, Number(us[2]), 12));
+    return build(year, Number(us[1]), Number(us[2]));
   }
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    return new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 12));
-  }
+  if (iso) return build(Number(iso[1]), Number(iso[2]), Number(iso[3]));
   return null;
 }
 
@@ -197,7 +204,12 @@ export function parseCreativeCsv(text: string, fallbackMonth: string): CsvParseR
       generations: /^\d+$/.test(gen) ? Number(gen) : null,
       launchedAt: parseSheetDate(cell(r, "launchedAt")),
       cogScore: /^\d+$/.test(cog) ? Number(cog) : null,
-      isWinner: Boolean(nn(cell(r, "isWinner"))),
+      // A Winner column filled with Yes/No must not mark every row a winner.
+      isWinner: (() => {
+        const v = norm(cell(r, "isWinner"));
+        if (!v || v === "no" || v === "n" || v === "false" || v === "0") return false;
+        return true;
+      })(),
       notes: nn(cell(r, "notes")),
     });
   }

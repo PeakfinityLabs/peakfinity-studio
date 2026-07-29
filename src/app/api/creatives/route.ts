@@ -60,8 +60,12 @@ export async function GET(req: Request) {
   const ownFilter: Prisma.CreativeWhereInput = {
     OR: [
       { editorUserId: me.id },
-      { editor: { equals: me.name, mode: "insensitive" } },
       { createdById: me.id },
+      // Legacy rows imported from the sheet carry only a name. Match those by
+      // name — but ONLY when unlinked, so a row explicitly assigned to someone
+      // else can never be picked up by a user who happens to share a name
+      // (User.name is not unique).
+      { AND: [{ editorUserId: null }, { editor: { equals: me.name, mode: "insensitive" } }] },
     ],
   };
   // Archived rows are hidden everywhere except an admin's explicit archive view.

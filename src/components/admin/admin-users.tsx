@@ -180,7 +180,14 @@ export function AdminUsers({ users }: { users: AdminUserRow[] }) {
                           <SelectItem value={NO_JOB_TITLE}>No title</SelectItem>
                           {JOB_TITLES.map((t) => (
                             <SelectItem key={t} value={t}>
-                              {t}
+                              <div className="flex flex-col">
+                                <span>{t}</span>
+                                {t === "Strategist" && (
+                                  <span className="text-xs text-muted-foreground">
+                                    Also grants full creative-tracker access
+                                  </span>
+                                )}
+                              </div>
                             </SelectItem>
                           ))}
                         </SelectContent>

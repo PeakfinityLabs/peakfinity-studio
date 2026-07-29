@@ -18,10 +18,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!creative) return NextResponse.json({ error: "Creative not found" }, { status: 404 });
 
   const caps = trackerCaps(me);
-  const mine =
-    creative.editorUserId === me.id ||
-    creative.createdById === me.id ||
-    creative.editor?.toLowerCase() === me.name.toLowerCase();
+  const mine = creative.editorUserId
+    ? creative.editorUserId === me.id
+    : creative.createdById === me.id ||
+      creative.editor?.toLowerCase() === me.name.toLowerCase();
   if (!caps.canSeeAll && !mine) {
     return NextResponse.json({ error: "Creative not found" }, { status: 404 });
   }

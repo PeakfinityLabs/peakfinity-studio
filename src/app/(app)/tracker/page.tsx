@@ -36,7 +36,10 @@ export default async function TrackerPage() {
   const copy = COPY[caps.tier];
 
   return (
-    <div className="space-y-6">
+    // The board is wide: reclaim margin on large screens so the table fits
+    // without horizontal scrolling. Safe (no 100vw) — only at breakpoints
+    // where the viewport is provably wider than the shell.
+    <div className="space-y-6 xl:-mx-12 2xl:-mx-32">
       <div>
         <p className="label-mono mb-2">Creative Tracker</p>
         <h1 className="text-display text-3xl">{copy.heading}</h1>

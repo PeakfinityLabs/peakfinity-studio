@@ -91,7 +91,9 @@ function toCsv(rows: CreativeRow[]): string {
       r.month, r.lp, r.page, r.strategist, r.title, r.briefLink, r.editor,
       r.videoLink, r.contentNeeded ? "Yes" : "No", STATUS_LABELS[r.status],
       PRIORITY_LABELS[r.priority], r.aiModel, r.generations,
-      r.launchedAt ? formatTrackerDate(r.launchedAt) : "",
+      // ISO, not a locale string: an export must re-import identically
+      // regardless of the browser's date format.
+      r.launchedAt ? new Date(r.launchedAt).toISOString().slice(0, 10) : "",
       r.cogScore, r.isWinner ? "Yes" : "", r.notes,
     ].map(esc).join(",")
   );
@@ -355,60 +357,62 @@ export function TrackerView({ users }: { users: TrackerUser[] }) {
       ) : (
         <Card>
           <CardContent className="p-0">
+            {/* Denser 7-column layout: related fields are stacked inside a
+                cell rather than each taking a column, so the board fits without
+                horizontal scrolling on a normal laptop. The Creative column is
+                sticky so context survives if narrow screens do scroll. */}
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 z-20 bg-card">
                   <TableRow>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Page</TableHead>
-                    <TableHead>Strategist</TableHead>
-                    <TableHead>Editor</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead className="min-w-56">Video link</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead className="text-right">Launched</TableHead>
-                    <TableHead className="text-right">COG</TableHead>
+                    <TableHead className="sticky left-0 z-30 min-w-64 bg-card">Creative</TableHead>
+                    <TableHead className="min-w-36">Team</TableHead>
+                    <TableHead className="min-w-32">Status</TableHead>
+                    <TableHead className="min-w-20">Priority</TableHead>
+                    <TableHead className="min-w-52">Video link</TableHead>
+                    <TableHead className="min-w-28">Performance</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="max-w-64">
+                      {/* Creative: title + brief code + brand, sticky on scroll */}
+                      <TableCell className="sticky left-0 z-10 max-w-72 bg-card">
                         <div className="flex items-center gap-1.5">
-                          <span className="truncate font-medium">{r.title}</span>
+                          <span className="truncate font-medium" title={r.title}>
+                            {r.title}
+                          </span>
                           {r.isWinner && <span title="Winner">🏆</span>}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                          {r.page && <span className="truncate">{r.page}</span>}
                           {r.briefLink && (
-                            <span className="font-mono text-xs text-muted-foreground">
+                            <span className="truncate font-mono" title={r.briefLink}>
                               {r.briefLink}
                             </span>
                           )}
-                          {r.videoLink && (
-                            <a
-                              href={r.videoLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs underline-offset-4 hover:underline"
-                            >
-                              video ↗
-                            </a>
-                          )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm">{r.page ?? "—"}</TableCell>
-                      <TableCell className="text-sm">{r.strategist ?? "—"}</TableCell>
-                      <TableCell className="text-sm">{r.editor ?? "—"}</TableCell>
+
+                      {/* Team: strategist over editor */}
+                      <TableCell className="text-xs">
+                        <div className="truncate" title={`Strategist: ${r.strategist ?? "—"}`}>
+                          <span className="text-muted-foreground">S</span> {r.strategist ?? "—"}
+                        </div>
+                        <div className="truncate" title={`Editor: ${r.editor ?? "—"}`}>
+                          <span className="text-muted-foreground">E</span> {r.editor ?? "—"}
+                        </div>
+                      </TableCell>
+
                       <TableCell>
-                        {caps.canEditAllFields ? (
+                        {caps.canEditAllFields && !showArchived ? (
                           <Select
                             value={r.status}
                             onValueChange={(v) => void quickStatus(r, v ?? r.status)}
                             disabled={busyId === r.id}
                           >
-                            <SelectTrigger size="sm" className="w-36">
+                            <SelectTrigger size="sm" className="w-32">
                               <SelectValue>
                                 <Badge variant={statusVariant(r.status)}>
                                   {STATUS_LABELS[r.status]}
@@ -437,8 +441,9 @@ export function TrackerView({ users }: { users: TrackerUser[] }) {
                         <div className="flex items-center gap-1.5">
                           <Input
                             defaultValue={r.videoLink ?? ""}
-                            placeholder="Paste video link…"
-                            disabled={busyId === r.id}
+                            placeholder={showArchived ? "" : "Paste video link…"}
+                            // Archived rows are read-only; PATCH would 409.
+                            disabled={busyId === r.id || showArchived}
                             className="h-7 text-xs"
                             onBlur={(e) => void saveVideoLink(r, e.target.value)}
                             onKeyDown={(e) => {
@@ -458,14 +463,22 @@ export function TrackerView({ users }: { users: TrackerUser[] }) {
                           )}
                         </div>
                       </TableCell>
+                      {/* Performance: model, launch date and COG stacked */}
                       <TableCell className="font-mono text-xs text-muted-foreground">
-                        {r.aiModel ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs text-muted-foreground">
-                        {formatTrackerDate(r.launchedAt)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs tabular-nums">
-                        {r.cogScore ?? "—"}
+                        {r.aiModel && (
+                          <div className="truncate" title={r.aiModel}>
+                            {r.aiModel}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          {r.launchedAt && <span>{formatTrackerDate(r.launchedAt)}</span>}
+                          {r.cogScore !== null && (
+                            <span className="text-foreground tabular-nums" title="COG score">
+                              {r.cogScore}
+                            </span>
+                          )}
+                        </div>
+                        {!r.aiModel && !r.launchedAt && r.cogScore === null && <span>—</span>}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1.5">
