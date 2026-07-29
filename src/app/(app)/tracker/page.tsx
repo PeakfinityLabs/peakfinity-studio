@@ -1,15 +1,31 @@
 import { getSessionUser } from "@/lib/authz";
 import { prisma } from "@/lib/db";
+import { trackerCaps } from "@/lib/creatives";
 import { TrackerView } from "@/components/tracker/tracker-view";
 
 export const metadata = { title: "Creative Tracker — Peakfinity Studio" };
 
+const COPY: Record<string, { heading: string; sub: string }> = {
+  admin: {
+    heading: "Every creative in flight",
+    sub: "Brief, assign and track each concept from scripting through launch.",
+  },
+  strategist: {
+    heading: "Every creative in flight",
+    sub: "Brief and track the whole board. Removing a creative is admin-only.",
+  },
+  editor: {
+    heading: "Your creative",
+    sub: "Add concepts and drop in your video links as you finish them.",
+  },
+};
+
 export default async function TrackerPage() {
   const me = (await getSessionUser())!;
-  const isAdmin = me.role === "ADMIN";
+  const caps = trackerCaps(me);
 
   // Assignable people for the editor/strategist pickers.
-  const users = isAdmin
+  const users = caps.canEditAllFields
     ? await prisma.user.findMany({
         where: { status: "APPROVED" },
         select: { id: true, name: true, jobTitle: true },
@@ -17,20 +33,16 @@ export default async function TrackerPage() {
       })
     : [];
 
+  const copy = COPY[caps.tier];
+
   return (
     <div className="space-y-6">
       <div>
         <p className="label-mono mb-2">Creative Tracker</p>
-        <h1 className="text-display text-3xl">
-          {isAdmin ? "Every creative in flight" : "Your assigned creative"}
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {isAdmin
-            ? "Brief, assign, and track each concept from scripting through launch."
-            : "Update status and drop in your video link as you go."}
-        </p>
+        <h1 className="text-display text-3xl">{copy.heading}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{copy.sub}</p>
       </div>
-      <TrackerView isAdmin={isAdmin} users={users} />
+      <TrackerView users={users} />
     </div>
   );
 }

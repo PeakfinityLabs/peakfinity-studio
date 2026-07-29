@@ -195,7 +195,13 @@ async function main() {
     }
     if (commit) {
       await prisma.creative.create({
-        data: { ...r, editorUserId: r.editor ? (byName.get(r.editor.toLowerCase()) ?? null) : null },
+        data: {
+          ...r,
+          editorUserId: r.editor ? (byName.get(r.editor.toLowerCase()) ?? null) : null,
+          strategistUserId: r.strategist
+            ? (byName.get(r.strategist.toLowerCase()) ?? null)
+            : null,
+        },
       });
     }
     created++;

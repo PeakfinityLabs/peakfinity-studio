@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
+import { trackerCaps } from "@/lib/creatives";
 import { CreativePriority, CreativeStatus } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -14,6 +15,8 @@ const listQuerySchema = z.object({
   page: z.string().optional(),
   editor: z.string().optional(),
   mine: z.enum(["1", "0"]).optional(),
+  /** Admin-only view of archived rows, for restoring. */
+  archived: z.enum(["1", "0"]).optional(),
 });
 
 const createSchema = z.object({
@@ -22,6 +25,7 @@ const createSchema = z.object({
   lp: z.string().trim().max(1000).optional().nullable(),
   page: z.string().trim().max(120).optional().nullable(),
   strategist: z.string().trim().max(120).optional().nullable(),
+  strategistUserId: z.string().trim().optional().nullable(),
   briefLink: z.string().trim().max(1000).optional().nullable(),
   editor: z.string().trim().max(120).optional().nullable(),
   editorUserId: z.string().trim().optional().nullable(),
@@ -46,17 +50,29 @@ export async function GET(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid query" }, { status: 400 });
   }
-  const { month, status, priority, page, editor, mine } = parsed.data;
+  const { month, status, priority, page, editor, mine, archived } = parsed.data;
+  const caps = trackerCaps(me);
+  const showArchived = archived === "1" && caps.canArchive;
 
-  // Editors only ever see their own assignments; admins see everything.
-  const ownOnly = me.role !== "ADMIN" || mine === "1";
+  // Admins and strategists see the whole board; editors see only rows assigned
+  // to them or ones they added themselves.
+  const ownOnly = !caps.canSeeAll || mine === "1";
   const ownFilter: Prisma.CreativeWhereInput = {
-    OR: [{ editorUserId: me.id }, { editor: { equals: me.name, mode: "insensitive" } }],
+    OR: [
+      { editorUserId: me.id },
+      { editor: { equals: me.name, mode: "insensitive" } },
+      { createdById: me.id },
+    ],
+  };
+  // Archived rows are hidden everywhere except an admin's explicit archive view.
+  const visible: Prisma.CreativeWhereInput = {
+    archivedAt: showArchived ? { not: null } : null,
+    ...(ownOnly ? ownFilter : {}),
   };
 
   const creatives = await prisma.creative.findMany({
     where: {
-      ...(ownOnly ? ownFilter : {}),
+      ...visible,
       ...(month ? { month } : {}),
       ...(status ? { status } : {}),
       ...(priority ? { priority } : {}),
@@ -68,21 +84,27 @@ export async function GET(req: Request) {
 
   // Month list for the filter dropdown (all months the user can see).
   const months = await prisma.creative.findMany({
-    where: ownOnly ? ownFilter : {},
+    where: visible,
     distinct: ["month"],
     select: { month: true },
     orderBy: { month: "desc" },
   });
 
+  const archivedCount = caps.canArchive
+    ? await prisma.creative.count({ where: { archivedAt: { not: null } } })
+    : 0;
+
   return NextResponse.json({
     creatives,
     months: months.map((m) => m.month),
-    canManage: me.role === "ADMIN",
+    caps,
+    archivedCount,
   });
 }
 
+// Anyone approved may add a creative — adding is safe and reversible.
 export async function POST(req: Request) {
-  const me = await apiGuard({ requireAdmin: true });
+  const me = await apiGuard();
   if (me instanceof NextResponse) return me;
 
   let body: unknown;
@@ -100,11 +122,31 @@ export async function POST(req: Request) {
   }
 
   const { launchedAt, ...rest } = parsed.data;
+  const caps = trackerCaps(me);
+
+  // An editor adding a row can't pre-assign it away from themselves or set
+  // launch/score fields — they brief it in and it starts in the backlog.
+  const data = caps.canEditAllFields
+    ? { ...rest, launchedAt: launchedAt ? new Date(launchedAt) : null }
+    : {
+        month: rest.month,
+        title: rest.title,
+        page: rest.page,
+        lp: rest.lp,
+        briefLink: rest.briefLink,
+        videoLink: rest.videoLink,
+        notes: rest.notes,
+        editor: me.name,
+        editorUserId: me.id,
+      };
+
   const creative = await prisma.creative.create({
-    data: {
-      ...rest,
-      launchedAt: launchedAt ? new Date(launchedAt) : null,
-    },
+    data: { ...data, createdById: me.id, createdByName: me.name },
   });
+
+  await prisma.creativeChange.create({
+    data: { creativeId: creative.id, userId: me.id, userName: me.name, action: "CREATE" },
+  });
+
   return NextResponse.json({ creative }, { status: 201 });
 }

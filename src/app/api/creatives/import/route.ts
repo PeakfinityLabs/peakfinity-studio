@@ -74,6 +74,9 @@ export async function POST(req: Request) {
         data: {
           ...r,
           editorUserId: r.editor ? (byName.get(r.editor.toLowerCase()) ?? null) : null,
+          strategistUserId: r.strategist
+            ? (byName.get(r.strategist.toLowerCase()) ?? null)
+            : null,
         },
       });
     }

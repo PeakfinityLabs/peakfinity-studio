@@ -77,6 +77,7 @@ model User {
   jobs            Job[]
   usageEvents     UsageEvent[]
   creatives       Creative[]   @relation("CreativeEditor")
+  strategistOn    Creative[]   @relation("CreativeStrategist")
 
   @@index([status, createdAt])
 }
@@ -88,7 +89,12 @@ model Creative {
   month         String
   lp            String?
   page          String?
-  strategist    String?
+  /// Name as shown; strategistUserId links it to a registered user. The plain
+  /// name is kept so rows imported from the sheet (people who may not have
+  /// accounts yet) still display correctly.
+  strategist      String?
+  strategistUserId String?
+  strategistUser  User?           @relation("CreativeStrategist", fields: [strategistUserId], references: [id], onDelete: SetNull)
   title         String
   briefLink     String?
   /// Editor name as typed (people in the sheet may not have accounts yet);
@@ -106,12 +112,37 @@ model Creative {
   cogScore      Int?
   isWinner      Boolean          @default(false)
   notes         String?
+  /// Soft delete: archived rows disappear from the tracker but are always
+  /// recoverable by an admin. Nothing is ever hard-deleted.
+  archivedAt    DateTime?
+  archivedBy    String?
+  createdById   String?
+  createdByName String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
+  changes       CreativeChange[]
 
   @@index([month, createdAt])
   @@index([editorUserId])
+  @@index([strategistUserId])
   @@index([status])
+  @@index([archivedAt])
+}
+
+/// Append-only audit trail: who changed what on a creative, and when.
+model CreativeChange {
+  id         String   @id @default(cuid())
+  creativeId String
+  creative   Creative @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  userId     String?
+  userName   String
+  /// CREATE | UPDATE | ARCHIVE | RESTORE
+  action     String
+  /// [{ field, from, to }] for UPDATE; empty for the others.
+  changes    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([creativeId, createdAt])
 }
 
 model Job {

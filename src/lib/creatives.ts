@@ -74,5 +74,32 @@ export function currentMonth(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Fields an assigned editor may change on their own rows. */
-export const EDITOR_EDITABLE_FIELDS = ["status", "videoLink", "generations", "notes"] as const;
+/**
+ * The only field a plain editor may change. Deliberately narrow: editors add
+ * creatives and drop in their video link, and can't disturb anything else.
+ */
+export const EDITOR_EDITABLE_FIELDS = ["videoLink"] as const;
+
+/**
+ * Tracker capabilities. Note this is the one place a *job title* affects
+ * behaviour — Strategists get full visibility of the board. It only ever
+ * governs the tracker; Studio/Library/Usage/Admin access still comes from
+ * `role` alone. Nobody but an admin can remove a creative, and even then it's
+ * an archive (recoverable), never a hard delete.
+ */
+export type TrackerCaps = {
+  canSeeAll: boolean;
+  canEditAllFields: boolean;
+  canArchive: boolean;
+  tier: "admin" | "strategist" | "editor";
+};
+
+export function trackerCaps(user: { role: string; jobTitle?: string | null }): TrackerCaps {
+  if (user.role === "ADMIN") {
+    return { canSeeAll: true, canEditAllFields: true, canArchive: true, tier: "admin" };
+  }
+  if ((user.jobTitle ?? "").toLowerCase() === "strategist") {
+    return { canSeeAll: true, canEditAllFields: true, canArchive: false, tier: "strategist" };
+  }
+  return { canSeeAll: false, canEditAllFields: false, canArchive: false, tier: "editor" };
+}

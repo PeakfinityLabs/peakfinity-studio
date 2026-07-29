@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ import {
   currentMonth,
   formatMonth,
   formatTrackerDate,
+  type TrackerCaps,
 } from "@/lib/creatives";
 
 export type CreativeRow = {
@@ -41,6 +43,7 @@ export type CreativeRow = {
   lp: string | null;
   page: string | null;
   strategist: string | null;
+  strategistUserId: string | null;
   title: string;
   briefLink: string | null;
   editor: string | null;
@@ -95,7 +98,15 @@ function toCsv(rows: CreativeRow[]): string {
   return [headers.join(","), ...lines].join("\n");
 }
 
-export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: TrackerUser[] }) {
+const DEFAULT_CAPS: TrackerCaps = {
+  canSeeAll: false,
+  canEditAllFields: false,
+  canArchive: false,
+  tier: "editor",
+};
+
+export function TrackerView({ users }: { users: TrackerUser[] }) {
+  const [caps, setCaps] = useState<TrackerCaps>(DEFAULT_CAPS);
   const [rows, setRows] = useState<CreativeRow[] | null>(null);
   const [months, setMonths] = useState<string[]>([]);
   const [filters, setFilters] = useState({
@@ -104,6 +115,8 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
     priority: ALL,
     page: ALL,
   });
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedCount, setArchivedCount] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<CreativeRow | null>(null);
@@ -115,14 +128,22 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
     if (filters.status !== ALL) p.set("status", filters.status);
     if (filters.priority !== ALL) p.set("priority", filters.priority);
     if (filters.page !== ALL) p.set("page", filters.page);
+    if (showArchived) p.set("archived", "1");
     return `/api/creatives?${p.toString()}`;
-  }, [filters]);
+  }, [filters, showArchived]);
 
   const load = useCallback(async () => {
     try {
-      const data = await fetchJson<{ creatives: CreativeRow[]; months: string[] }>(query());
+      const data = await fetchJson<{
+        creatives: CreativeRow[];
+        months: string[];
+        caps: TrackerCaps;
+        archivedCount: number;
+      }>(query());
       setRows(data.creatives);
       setMonths(data.months);
+      setCaps(data.caps);
+      setArchivedCount(data.archivedCount ?? 0);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not load the tracker");
       setRows([]);
@@ -150,6 +171,28 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
     };
   }, [rows]);
 
+  const saveVideoLink = async (row: CreativeRow, videoLink: string) => {
+    const value = videoLink.trim();
+    if ((row.videoLink ?? "") === value) return;
+    setBusyId(row.id);
+    try {
+      await fetchJson(`/api/creatives/${row.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ videoLink: value || null }),
+      });
+      setRows((prev) =>
+        (prev ?? []).map((r) => (r.id === row.id ? { ...r, videoLink: value || null } : r))
+      );
+      toast.success("Video link saved");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save the video link");
+      void load();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const quickStatus = async (row: CreativeRow, status: string) => {
     setBusyId(row.id);
     try {
@@ -170,15 +213,35 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
     }
   };
 
-  const remove = async (row: CreativeRow) => {
-    if (!window.confirm(`Delete "${row.title}"? This can't be undone.`)) return;
+  const restore = async (row: CreativeRow) => {
+    setBusyId(row.id);
+    try {
+      await fetchJson(`/api/creatives/${row.id}/restore`, { method: "POST" });
+      setRows((prev) => (prev ?? []).filter((r) => r.id !== row.id));
+      setArchivedCount((n) => Math.max(0, n - 1));
+      toast.success("Restored to the tracker");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not restore");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const archive = async (row: CreativeRow) => {
+    if (
+      !window.confirm(
+        `Archive "${row.title}"?\n\nIt's removed from the tracker but kept — you can restore it from the archive at any time.`
+      )
+    )
+      return;
     setBusyId(row.id);
     try {
       await fetchJson(`/api/creatives/${row.id}`, { method: "DELETE" });
       setRows((prev) => (prev ?? []).filter((r) => r.id !== row.id));
-      toast.success("Creative deleted");
+      setArchivedCount((n) => n + 1);
+      toast.success("Archived — restorable from the archive");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not delete");
+      toast.error(error instanceof Error ? error.message : "Could not archive");
     } finally {
       setBusyId(null);
     }
@@ -248,25 +311,33 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
           </Select>
         ))}
         <div className="ml-auto flex gap-2">
+          {caps.canArchive && (archivedCount > 0 || showArchived) && (
+            <Button
+              variant={showArchived ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowArchived((v) => !v)}
+            >
+              {showArchived ? "← Back to tracker" : `Archive (${archivedCount})`}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows?.length}>
             Export CSV
           </Button>
-          {isAdmin && (
-            <>
-              <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-                Import CSV
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setEditing(null);
-                  setDialogOpen(true);
-                }}
-              >
-                + New creative
-              </Button>
-            </>
+          {caps.canEditAllFields && (
+            <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+              Import CSV
+            </Button>
           )}
+          {/* Anyone can add — adding is safe, and every row is attributed. */}
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
+          >
+            + New creative
+          </Button>
         </div>
       </div>
 
@@ -276,9 +347,9 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
       ) : rows.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            {isAdmin
+            {caps.canSeeAll
               ? "No creative matches these filters yet."
-              : "Nothing is assigned to you right now."}
+              : "Nothing here yet — add a creative to get started."}
           </CardContent>
         </Card>
       ) : (
@@ -294,6 +365,7 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
                     <TableHead>Editor</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Priority</TableHead>
+                    <TableHead className="min-w-56">Video link</TableHead>
                     <TableHead>Model</TableHead>
                     <TableHead className="text-right">Launched</TableHead>
                     <TableHead className="text-right">COG</TableHead>
@@ -330,29 +402,61 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
                       <TableCell className="text-sm">{r.strategist ?? "—"}</TableCell>
                       <TableCell className="text-sm">{r.editor ?? "—"}</TableCell>
                       <TableCell>
-                        <Select
-                          value={r.status}
-                          onValueChange={(v) => void quickStatus(r, v ?? r.status)}
-                          disabled={busyId === r.id}
-                        >
-                          <SelectTrigger size="sm" className="w-36">
-                            <SelectValue>
-                              <Badge variant={statusVariant(r.status)}>
-                                {STATUS_LABELS[r.status]}
-                              </Badge>
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {CREATIVE_STATUSES.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {STATUS_LABELS[s]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {caps.canEditAllFields ? (
+                          <Select
+                            value={r.status}
+                            onValueChange={(v) => void quickStatus(r, v ?? r.status)}
+                            disabled={busyId === r.id}
+                          >
+                            <SelectTrigger size="sm" className="w-36">
+                              <SelectValue>
+                                <Badge variant={statusVariant(r.status)}>
+                                  {STATUS_LABELS[r.status]}
+                                </Badge>
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {CREATIVE_STATUSES.map((s) => (
+                                <SelectItem key={s} value={s}>
+                                  {STATUS_LABELS[s]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant={statusVariant(r.status)}>
+                            {STATUS_LABELS[r.status]}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className={`text-sm ${priorityClass(r.priority)}`}>
                         {PRIORITY_LABELS[r.priority]}
+                      </TableCell>
+                      {/* The one field every editor can change. */}
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            defaultValue={r.videoLink ?? ""}
+                            placeholder="Paste video link…"
+                            disabled={busyId === r.id}
+                            className="h-7 text-xs"
+                            onBlur={(e) => void saveVideoLink(r, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") e.currentTarget.blur();
+                            }}
+                          />
+                          {r.videoLink && (
+                            <a
+                              href={r.videoLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+                              title="Open video"
+                            >
+                              ↗
+                            </a>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {r.aiModel ?? "—"}
@@ -365,26 +469,38 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1.5">
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            disabled={busyId === r.id}
-                            onClick={() => {
-                              setEditing(r);
-                              setDialogOpen(true);
-                            }}
-                          >
-                            Edit
-                          </Button>
-                          {isAdmin && (
+                          {showArchived ? (
                             <Button
                               size="xs"
-                              variant="outline"
                               disabled={busyId === r.id}
-                              onClick={() => void remove(r)}
+                              onClick={() => void restore(r)}
                             >
-                              Delete
+                              Restore
                             </Button>
+                          ) : (
+                            <>
+                              <Button
+                                size="xs"
+                                variant="outline"
+                                disabled={busyId === r.id}
+                                onClick={() => {
+                                  setEditing(r);
+                                  setDialogOpen(true);
+                                }}
+                              >
+                                {caps.canEditAllFields ? "Edit" : "Details"}
+                              </Button>
+                              {caps.canArchive && (
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  disabled={busyId === r.id}
+                                  onClick={() => void archive(r)}
+                                >
+                                  Archive
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </TableCell>
@@ -401,13 +517,13 @@ export function TrackerView({ isAdmin, users }: { isAdmin: boolean; users: Track
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         creative={editing}
-        isAdmin={isAdmin}
+        canEditAll={caps.canEditAllFields}
         users={users}
         defaultMonth={filters.month === ALL ? currentMonth() : filters.month}
         onSaved={() => void load()}
       />
 
-      {isAdmin && (
+      {caps.canEditAllFields && (
         <ImportDialog
           open={importOpen}
           onOpenChange={setImportOpen}

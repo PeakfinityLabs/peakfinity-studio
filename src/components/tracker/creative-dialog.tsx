@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -35,6 +35,90 @@ import {
 import type { CreativeRow, TrackerUser } from "@/components/tracker/tracker-view";
 
 const NONE = "__none__";
+const LEGACY_PREFIX = "legacy:";
+
+/**
+ * Person picker backed by registered users. Any pre-existing name that has no
+ * account (e.g. rows imported from the old sheet) stays selectable and is
+ * flagged, so importing never silently drops an assignment.
+ */
+function PersonSelect({
+  label,
+  users,
+  preferTitle,
+  name,
+  onChange,
+}: {
+  label: string;
+  users: TrackerUser[];
+  /** Users with this job title are listed first. */
+  preferTitle: string;
+  name: string | null;
+  onChange: (name: string | null, userId: string | null) => void;
+}) {
+  const matched = users.find((u) => u.name.toLowerCase() === (name ?? "").toLowerCase());
+  const isLegacy = Boolean(name) && !matched;
+
+  const preferred = users.filter((u) => u.jobTitle === preferTitle);
+  const others = users.filter((u) => u.jobTitle !== preferTitle);
+  const ordered = [...preferred, ...others];
+
+  const value = matched ? matched.id : isLegacy ? `${LEGACY_PREFIX}${name}` : NONE;
+
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <Select
+        value={value}
+        onValueChange={(v) => {
+          if (!v || v === NONE) return onChange(null, null);
+          if (v.startsWith(LEGACY_PREFIX)) return onChange(v.slice(LEGACY_PREFIX.length), null);
+          const user = users.find((u) => u.id === v);
+          onChange(user?.name ?? null, user?.id ?? null);
+        }}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue>
+            {name ? (
+              <span>
+                {name}
+                {isLegacy && <span className="ml-1 text-xs text-muted-foreground">(no account)</span>}
+              </span>
+            ) : (
+              "—"
+            )}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NONE}>—</SelectItem>
+          {isLegacy && (
+            <SelectItem value={`${LEGACY_PREFIX}${name}`}>
+              <div className="flex flex-col">
+                <span>{name}</span>
+                <span className="text-xs text-muted-foreground">Not registered yet</span>
+              </div>
+            </SelectItem>
+          )}
+          {ordered.map((u) => (
+            <SelectItem key={u.id} value={u.id}>
+              <div className="flex flex-col">
+                <span>{u.name}</span>
+                {u.jobTitle && (
+                  <span className="text-xs text-muted-foreground">{u.jobTitle}</span>
+                )}
+              </div>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {users.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          No approved users yet — approve people in the admin panel first.
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** Empty row used when adding. */
 function blankRow(month: string): Partial<CreativeRow> {
@@ -52,7 +136,7 @@ export function CreativeDialog({
   open,
   onOpenChange,
   creative,
-  isAdmin,
+  canEditAll,
   users,
   defaultMonth,
   onSaved,
@@ -61,13 +145,15 @@ export function CreativeDialog({
   onOpenChange: (open: boolean) => void;
   /** null = create a new row */
   creative: CreativeRow | null;
-  isAdmin: boolean;
+  /** Admins and strategists edit every field; editors only the video link. */
+  canEditAll: boolean;
   users: TrackerUser[];
   defaultMonth: string;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState<Partial<CreativeRow>>(blankRow(defaultMonth));
   const [saving, setSaving] = useState(false);
+  const isNew = creative === null;
 
   useEffect(() => {
     setForm(creative ?? blankRow(defaultMonth || currentMonth()));
@@ -77,15 +163,16 @@ export function CreativeDialog({
     setForm((prev) => ({ ...prev, [key]: value }));
 
   const save = async () => {
-    if (isAdmin && !String(form.title ?? "").trim()) {
+    if ((canEditAll || isNew) && !String(form.title ?? "").trim()) {
       toast.error("Title is required.");
       return;
     }
     setSaving(true);
     try {
       const clean = (v: unknown) => (v === "" || v === undefined ? null : v);
-      // Editors may only send their own progress fields; admins send everything.
-      const payload = isAdmin
+      // Editors send only what they're allowed to change; the server enforces
+      // this too — this just keeps the request honest.
+      const payload = canEditAll
         ? {
             month: form.month,
             title: form.title,
@@ -108,12 +195,19 @@ export function CreativeDialog({
             isWinner: form.isWinner ?? false,
             notes: clean(form.notes),
           }
-        : {
-            status: form.status,
-            videoLink: clean(form.videoLink),
-            generations: form.generations === null ? null : clean(form.generations),
-            notes: clean(form.notes),
-          };
+        : creative
+          ? { videoLink: clean(form.videoLink) }
+          : {
+              // Adding: an editor briefs in the basics; it lands in the backlog
+              // assigned to them.
+              month: form.month,
+              title: form.title,
+              page: clean(form.page),
+              lp: clean(form.lp),
+              briefLink: clean(form.briefLink),
+              videoLink: clean(form.videoLink),
+              notes: clean(form.notes),
+            };
 
       if (creative) {
         await fetchJson(`/api/creatives/${creative.id}`, {
@@ -150,14 +244,18 @@ export function CreativeDialog({
             {creative ? form.title || "Edit creative" : "New creative"}
           </DialogTitle>
           <DialogDescription>
-            {isAdmin
+            {canEditAll
               ? "Brief, assign and track this concept."
-              : "Update your progress — status, video link, generations and notes."}
+              : creative
+                ? "You can update the video link. Everything else is set by a strategist or admin."
+                : "Add a concept — it lands in the backlog assigned to you."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-2 sm:grid-cols-2">
-          {isAdmin && (
+          {/* Briefing basics: editable by anyone adding a row, and by
+              strategists/admins on existing rows. */}
+          {(canEditAll || isNew) && (
             <>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="title">Title</Label>
@@ -166,6 +264,7 @@ export function CreativeDialog({
                   value={String(form.title ?? "")}
                   onChange={(e) => set("title", e.target.value)}
                   placeholder="e.g. Truck Driver Cholesterol"
+                  disabled={!canEditAll && !isNew}
                 />
               </div>
 
@@ -198,59 +297,32 @@ export function CreativeDialog({
                   </SelectContent>
                 </Select>
               </div>
+            </>
+          )}
 
-              <div className="space-y-1.5">
-                <Label htmlFor="strategist">Strategist</Label>
-                <Input
-                  id="strategist"
-                  value={String(form.strategist ?? "")}
-                  onChange={(e) => set("strategist", e.target.value)}
-                  placeholder="e.g. Jarrah"
-                />
-              </div>
+          {canEditAll && (
+            <>
+              <PersonSelect
+                label="Strategist"
+                users={users}
+                preferTitle="Strategist"
+                name={form.strategist ?? null}
+                onChange={(name, userId) => {
+                  set("strategist", name);
+                  set("strategistUserId", userId);
+                }}
+              />
 
-              <div className="space-y-1.5">
-                <Label htmlFor="editor">Editor</Label>
-                <Input
-                  id="editor"
-                  list="tracker-editors"
-                  value={String(form.editor ?? "")}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    const match = users.find(
-                      (u) => u.name.toLowerCase() === name.toLowerCase()
-                    );
-                    set("editor", name);
-                    set("editorUserId", match?.id ?? null);
-                  }}
-                  placeholder="e.g. Charles"
-                />
-                <datalist id="tracker-editors">
-                  {users.map((u) => (
-                    <option key={u.id} value={u.name} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="lp">Landing page</Label>
-                <Input
-                  id="lp"
-                  value={String(form.lp ?? "")}
-                  onChange={(e) => set("lp", e.target.value)}
-                  placeholder="Main Page, or a full URL"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="briefLink">Brief link / code</Label>
-                <Input
-                  id="briefLink"
-                  value={String(form.briefLink ?? "")}
-                  onChange={(e) => set("briefLink", e.target.value)}
-                  placeholder="e.g. EK0721"
-                />
-              </div>
+              <PersonSelect
+                label="Editor"
+                users={users}
+                preferTitle="Editor"
+                name={form.editor ?? null}
+                onChange={(name, userId) => {
+                  set("editor", name);
+                  set("editorUserId", userId);
+                }}
+              />
 
               <div className="space-y-1.5">
                 <Label>Priority</Label>
@@ -272,44 +344,67 @@ export function CreativeDialog({
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <Select
+                  value={form.status ?? "BACKLOG"}
+                  onValueChange={(v) => set("status", v ?? "BACKLOG")}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {STATUS_LABELS[(form.status ?? "BACKLOG") as keyof typeof STATUS_LABELS]}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CREATIVE_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {STATUS_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="generations">Generations</Label>
+                <Input
+                  id="generations"
+                  type="number"
+                  min={0}
+                  value={form.generations === null || form.generations === undefined ? "" : String(form.generations)}
+                  onChange={(e) =>
+                    set("generations", e.target.value === "" ? null : Number(e.target.value))
+                  }
+                />
+              </div>
             </>
           )}
 
-          {/* Shared / editor-editable fields */}
-          <div className="space-y-1.5">
-            <Label>Status</Label>
-            <Select
-              value={form.status ?? "BACKLOG"}
-              onValueChange={(v) => set("status", v ?? "BACKLOG")}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue>
-                  {STATUS_LABELS[(form.status ?? "BACKLOG") as keyof typeof STATUS_LABELS]}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {CREATIVE_STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {STATUS_LABELS[s]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {(canEditAll || isNew) && (
+            <>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="lp">Landing page</Label>
+                <Input
+                  id="lp"
+                  value={String(form.lp ?? "")}
+                  onChange={(e) => set("lp", e.target.value)}
+                  placeholder="Main Page, or a full URL"
+                />
+              </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="generations">Generations</Label>
-            <Input
-              id="generations"
-              type="number"
-              min={0}
-              value={form.generations === null || form.generations === undefined ? "" : String(form.generations)}
-              onChange={(e) =>
-                set("generations", e.target.value === "" ? null : Number(e.target.value))
-              }
-            />
-          </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="briefLink">Brief link / code</Label>
+                <Input
+                  id="briefLink"
+                  value={String(form.briefLink ?? "")}
+                  onChange={(e) => set("briefLink", e.target.value)}
+                  placeholder="e.g. EK0721"
+                />
+              </div>
+            </>
+          )}
 
+          {/* The one field every editor can always change. */}
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="videoLink">Video link</Label>
             <Input
@@ -320,7 +415,7 @@ export function CreativeDialog({
             />
           </div>
 
-          {isAdmin && (
+          {canEditAll && (
             <>
               <div className="space-y-1.5">
                 <Label htmlFor="aiModel">AI model</Label>
