@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddVoiceDialog } from "@/components/voices/add-voice-dialog";
+import { ImportVoiceDialog } from "@/components/voices/import-voice-dialog";
 import { fetchJson } from "@/lib/http";
 
 export type VoiceRow = {
@@ -41,6 +42,7 @@ export function VoicesView() {
   const [archivedCount, setArchivedCount] = useState(0);
   const [showArchived, setShowArchived] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -90,9 +92,16 @@ export function VoicesView() {
           </Button>
         )}
         {canManage && (
-          <Button size="sm" className="ml-auto" onClick={() => setAddOpen(true)}>
-            + Add voice
-          </Button>
+          <div className="ml-auto flex gap-2">
+            {engines.ELEVENLABS && (
+              <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+                Import from ElevenLabs
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              + Add voice
+            </Button>
+          </div>
         )}
       </div>
 
@@ -189,12 +198,19 @@ export function VoicesView() {
       )}
 
       {canManage && (
-        <AddVoiceDialog
-          open={addOpen}
-          onOpenChange={setAddOpen}
-          engines={engines}
-          onAdded={() => void load()}
-        />
+        <>
+          <AddVoiceDialog
+            open={addOpen}
+            onOpenChange={setAddOpen}
+            engines={engines}
+            onAdded={() => void load()}
+          />
+          <ImportVoiceDialog
+            open={importOpen}
+            onOpenChange={setImportOpen}
+            onImported={() => void load()}
+          />
+        </>
       )}
     </div>
   );

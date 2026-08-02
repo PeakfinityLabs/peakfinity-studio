@@ -72,9 +72,9 @@ const minimax: VoiceProviderImpl = {
 // which we re-host on fal storage so downstream steps (lipsync) get a URL.
 
 const ELEVENLABS_BASE = "https://api.elevenlabs.io";
-// Verified default; "eleven_v3" can be swapped in here once confirmed working
-// on the account's plan.
-const ELEVENLABS_MODEL_ID = "eleven_multilingual_v2";
+// Verified live 2026-08 on the team's paid plan against both premade and
+// instant-cloned voices ("eleven_multilingual_v2" also works as a fallback).
+const ELEVENLABS_MODEL_ID = "eleven_v3";
 
 function elevenLabsKey(): string {
   const key = process.env.ELEVENLABS_API_KEY;
@@ -146,6 +146,42 @@ const elevenlabs: VoiceProviderImpl = {
     return { audioUrl: url, durationMs: null };
   },
 };
+
+/**
+ * A voice that already exists in the team's ElevenLabs account (e.g. cloned
+ * earlier through Higgsfield). These can be imported into the library without
+ * consuming the account's clone quota.
+ */
+export type ElevenLabsAccountVoice = {
+  providerVoiceId: string;
+  name: string;
+  category: string; // "cloned" | "generated" | "professional" | "premade"
+  previewUrl: string | null; // ElevenLabs' own hosted preview, if any
+};
+
+export async function listElevenLabsAccountVoices(): Promise<ElevenLabsAccountVoice[]> {
+  const key = elevenLabsKey();
+  const res = await fetch(`${ELEVENLABS_BASE}/v1/voices?page_size=100`, {
+    headers: { "xi-api-key": key },
+  });
+  if (!res.ok) {
+    throw new Error(await elevenLabsError(res, "Could not list ElevenLabs voices"));
+  }
+  const out = (await res.json()) as {
+    voices?: Array<{
+      voice_id: string;
+      name: string;
+      category?: string;
+      preview_url?: string | null;
+    }>;
+  };
+  return (out.voices ?? []).map((v) => ({
+    providerVoiceId: v.voice_id,
+    name: v.name,
+    category: v.category ?? "unknown",
+    previewUrl: v.preview_url ?? null,
+  }));
+}
 
 const ENGINES: Record<VoiceEngineName, VoiceProviderImpl> = {
   MINIMAX: minimax,
