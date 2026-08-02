@@ -25,6 +25,9 @@ enum GenModel {
   SEEDANCE_2
   /// Re-voice an existing generation: TTS with a library voice + Kling lip-sync.
   KLING_LIPSYNC
+  /// Swap the voice of a video's existing speech (ElevenLabs speech-to-speech
+  /// + audio remux) — keeps the words and timing, no typing.
+  VOICE_SWAP
 }
 
 enum JobType {

@@ -254,7 +254,7 @@ export function JobView({
         </Card>
       )}
 
-      {job.model === "KLING_LIPSYNC" && job.input?.sourceJobId && (
+      {(job.model === "KLING_LIPSYNC" || job.model === "VOICE_SWAP") && job.input?.sourceJobId && (
         <p className="text-xs text-muted-foreground">
           Voice: {job.input.voiceName ?? "library voice"} · re-voiced from{" "}
           <Link href={`/jobs/${job.input.sourceJobId}`} className="underline underline-offset-4">

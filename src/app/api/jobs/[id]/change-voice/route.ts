@@ -9,6 +9,7 @@ import {
   MAX_LIPSYNC_SOURCE_SECONDS,
   RevoiceError,
   startRevoice,
+  startVoiceSwap,
 } from "@/lib/voice/revoice";
 import { fal } from "@/lib/fal/client";
 import { getFromR2 } from "@/lib/r2";
@@ -19,11 +20,17 @@ export const maxDuration = 300;
 
 const bodySchema = z.object({
   voiceId: z.string().min(1),
+  /**
+   * "swap": re-voice the video's EXISTING speech (no typing, ElevenLabs
+   * speech-to-speech + remux). "script": speak a typed script + lip-sync.
+   */
+  mode: z.enum(["swap", "script"]).default("script"),
   script: z
     .string()
     .trim()
     .min(4, "Write the line the avatar should say")
-    .max(900, "Keep the script under 900 characters (~60s of speech)"),
+    .max(900, "Keep the script under 900 characters (~60s of speech)")
+    .optional(),
 });
 
 /**
@@ -70,19 +77,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  // Kling lipsync rejects sources over 10s. The requested duration is stored
-  // in the source job's input; when it's unknown ("auto"), let fal validate.
-  const sourceParams = (source.input as { params?: Record<string, unknown> })?.params ?? {};
-  const sourceSeconds = Number(sourceParams.duration);
-  if (Number.isFinite(sourceSeconds) && sourceSeconds > MAX_LIPSYNC_SOURCE_SECONDS) {
-    return NextResponse.json(
-      {
-        error: `Kling lip-sync only accepts videos up to ${MAX_LIPSYNC_SOURCE_SECONDS}s — this one is ${sourceSeconds}s. Re-run it at ≤${MAX_LIPSYNC_SOURCE_SECONDS}s first.`,
-      },
-      { status: 400 }
-    );
-  }
-
   let body: unknown;
   try {
     body = await req.json();
@@ -96,7 +90,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       { status: 400 }
     );
   }
-  const { voiceId, script } = parsed.data;
+  const { voiceId, mode, script } = parsed.data;
+  if (mode === "script" && !script) {
+    return NextResponse.json({ error: "Write the line the avatar should say" }, { status: 400 });
+  }
+
+  // Kling lipsync rejects sources over 10s — script mode only (a swap keeps
+  // the original timing, so no lip-sync re-render and no duration limit).
+  const sourceParams = (source.input as { params?: Record<string, unknown> })?.params ?? {};
+  const sourceSeconds = Number(sourceParams.duration);
+  if (
+    mode === "script" &&
+    Number.isFinite(sourceSeconds) &&
+    sourceSeconds > MAX_LIPSYNC_SOURCE_SECONDS
+  ) {
+    return NextResponse.json(
+      {
+        error: `Kling lip-sync only accepts videos up to ${MAX_LIPSYNC_SOURCE_SECONDS}s — this one is ${sourceSeconds}s. Re-run it at ≤${MAX_LIPSYNC_SOURCE_SECONDS}s first, or use Swap voice instead.`,
+      },
+      { status: 400 }
+    );
+  }
 
   const voice = await prisma.voice.findUnique({ where: { id: voiceId } });
   if (!voice || voice.archivedAt) {
@@ -128,14 +142,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const { jobId } = await startRevoice({
-      userId: me.id,
-      voice,
-      script,
-      videoUrl,
-      sourceJobId: source.id,
-      sourceSeconds: Number.isFinite(sourceSeconds) ? sourceSeconds : null,
-    });
+    const { jobId } =
+      mode === "swap"
+        ? await startVoiceSwap({
+            userId: me.id,
+            voice,
+            videoUrl,
+            sourceJobId: source.id,
+          })
+        : await startRevoice({
+            userId: me.id,
+            voice,
+            script: script!,
+            videoUrl,
+            sourceJobId: source.id,
+            sourceSeconds: Number.isFinite(sourceSeconds) ? sourceSeconds : null,
+          });
     return NextResponse.json({ jobId }, { status: 201 });
   } catch (error) {
     if (error instanceof RevoiceError) {

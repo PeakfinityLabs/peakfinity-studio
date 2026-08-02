@@ -22,6 +22,7 @@ import {
   labelForGenModel,
   MODEL_SLUGS,
   MODELS,
+  VOICE_SWAP_LABEL,
 } from "@/lib/models/registry";
 import { isMediaExpired } from "@/lib/media";
 
@@ -45,6 +46,7 @@ const MODEL_FILTERS = [
   { value: "all", label: "All models" },
   ...MODEL_SLUGS.map((slug) => ({ value: MODELS[slug].genModel, label: MODELS[slug].label })),
   { value: "KLING_LIPSYNC", label: KLING_LIPSYNC_LABEL },
+  { value: "VOICE_SWAP", label: VOICE_SWAP_LABEL },
 ];
 const TYPE_FILTERS = [
   { value: "all", label: "Images + video" },

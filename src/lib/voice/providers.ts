@@ -203,6 +203,40 @@ export async function listElevenLabsAccountVoices(): Promise<ElevenLabsAccountVo
 }
 
 /**
+ * ElevenLabs speech-to-speech ("voice changer"): re-voices the speech in an
+ * existing recording — same words, same timing, no script. Accepts a video
+ * file directly (verified live with an mp4), so no audio extraction step.
+ * Returns the converted audio re-hosted on fal storage.
+ */
+export async function elevenLabsSpeechToSpeech(
+  sourceMediaUrl: string,
+  providerVoiceId: string
+): Promise<{ audioUrl: string }> {
+  const key = elevenLabsKey();
+
+  const sourceRes = await fetch(sourceMediaUrl);
+  if (!sourceRes.ok) throw new Error("Could not download the source video");
+  const sourceBytes = await sourceRes.arrayBuffer();
+  const contentType = sourceRes.headers.get("content-type") ?? "video/mp4";
+
+  const form = new FormData();
+  form.append("audio", new File([sourceBytes], "source.mp4", { type: contentType }));
+  form.append("model_id", "eleven_multilingual_sts_v2");
+  const res = await fetch(
+    `${ELEVENLABS_BASE}/v1/speech-to-speech/${providerVoiceId}?output_format=mp3_44100_128`,
+    { method: "POST", headers: { "xi-api-key": key }, body: form }
+  );
+  if (!res.ok) {
+    throw new Error(await elevenLabsError(res, "ElevenLabs voice swap failed"));
+  }
+  const bytes = await res.arrayBuffer();
+  const audioUrl = await fal.storage.upload(
+    new File([bytes], "swapped.mp3", { type: "audio/mpeg" })
+  );
+  return { audioUrl };
+}
+
+/**
  * When each account voice last generated speech, from the account's TTS
  * history (up to ~300 recent generations). Best effort — an API hiccup
  * returns an empty map rather than failing the caller.

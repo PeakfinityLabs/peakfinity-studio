@@ -48,12 +48,16 @@ export function ChangeVoiceDialog({
   const router = useRouter();
   const [voices, setVoices] = useState<VoiceOption[] | null>(null);
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  // "swap" (default, Jonah's flow): re-voice the existing speech, no typing.
+  // "script": type new lines + lip-sync re-render.
+  const [mode, setMode] = useState<"swap" | "script">("swap");
   const [script, setScript] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setScript("");
+    setMode("swap");
     fetchJson<{ voices: VoiceOption[] }>("/api/voices")
       .then((data) => {
         setVoices(data.voices);
@@ -65,14 +69,29 @@ export function ChangeVoiceDialog({
       });
   }, [open]);
 
+  // Swap uses ElevenLabs speech-to-speech, so only those voices qualify.
+  const eligibleVoices = useMemo(
+    () => (mode === "swap" ? (voices ?? []).filter((v) => v.provider === "ELEVENLABS") : (voices ?? [])),
+    [voices, mode]
+  );
+
+  useEffect(() => {
+    // Keep the selection valid when the mode filters the list.
+    if (voiceId && !eligibleVoices.some((v) => v.id === voiceId)) {
+      setVoiceId(eligibleVoices[0]?.id ?? null);
+    } else if (!voiceId && eligibleVoices.length > 0) {
+      setVoiceId(eligibleVoices[0].id);
+    }
+  }, [eligibleVoices, voiceId]);
+
   const selected = useMemo(
-    () => voices?.find((v) => v.id === voiceId) ?? null,
-    [voices, voiceId]
+    () => eligibleVoices.find((v) => v.id === voiceId) ?? null,
+    [eligibleVoices, voiceId]
   );
 
   const submit = async () => {
     if (!jobId || !voiceId) return;
-    if (script.trim().length < 4) {
+    if (mode === "script" && script.trim().length < 4) {
       toast.error("Write the line the avatar should say.");
       return;
     }
@@ -81,9 +100,15 @@ export function ChangeVoiceDialog({
       const data = await fetchJson<{ jobId: string }>(`/api/jobs/${jobId}/change-voice`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ voiceId, script: script.trim() }),
+        body: JSON.stringify(
+          mode === "swap" ? { voiceId, mode } : { voiceId, mode, script: script.trim() }
+        ),
       });
-      toast.success("Voicing started — lip-sync takes a few minutes");
+      toast.success(
+        mode === "swap"
+          ? "Voice swap started — usually under a minute"
+          : "Voicing started — lip-sync takes a few minutes"
+      );
       onOpenChange(false);
       router.push(`/jobs/${data.jobId}`);
     } catch (error) {
@@ -99,17 +124,37 @@ export function ChangeVoiceDialog({
         <DialogHeader>
           <DialogTitle className="text-display">Change voice</DialogTitle>
           <DialogDescription>
-            The avatar speaks your script in the chosen voice, lip-synced over this video. Runs
-            as a new generation — the original is untouched.
+            {mode === "swap"
+              ? "Keeps exactly what the avatar already says — just swaps the voice. No typing. Runs as a new generation; the original is untouched."
+              : "The avatar speaks your typed script in the chosen voice, lip-synced over this video. Runs as a new generation — the original is untouched."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          <div className="flex gap-1.5">
+            <Button
+              size="sm"
+              variant={mode === "swap" ? "default" : "outline"}
+              onClick={() => setMode("swap")}
+            >
+              Swap voice
+            </Button>
+            <Button
+              size="sm"
+              variant={mode === "script" ? "default" : "outline"}
+              onClick={() => setMode("script")}
+            >
+              New script
+            </Button>
+          </div>
+
           <div className="space-y-1.5">
             <Label>Voice</Label>
-            {voices !== null && voices.length === 0 ? (
+            {voices !== null && eligibleVoices.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No voices in the library yet — add or import one on the Voices page first.
+                {mode === "swap" && (voices?.length ?? 0) > 0
+                  ? "Voice swap needs an ElevenLabs voice — import one on the Voices page."
+                  : "No voices in the library yet — add or import one on the Voices page first."}
               </p>
             ) : (
               <Select value={voiceId ?? undefined} onValueChange={(v) => setVoiceId(v)}>
@@ -123,7 +168,7 @@ export function ChangeVoiceDialog({
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {(voices ?? []).map((v) => (
+                  {eligibleVoices.map((v) => (
                     <SelectItem key={v.id} value={v.id}>
                       {v.name} · {PROVIDER_LABELS[v.provider]}
                     </SelectItem>
@@ -142,21 +187,29 @@ export function ChangeVoiceDialog({
             )}
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="voiceScript">Script</Label>
-            <Textarea
-              id="voiceScript"
-              value={script}
-              onChange={(e) => setScript(e.target.value)}
-              rows={4}
-              maxLength={900}
-              placeholder="Exactly what the avatar should say…"
-            />
+          {mode === "swap" ? (
             <p className="text-xs text-muted-foreground">
-              Spoken audio must fit 2–60s. Source video must be 10s or shorter (Kling lip-sync
-              limit). Lip-sync costs ≈7–14¢ and takes several minutes.
+              Works on videos where the avatar already speaks (e.g. Kling default audio or an
+              earlier voicing). Same words, same timing — lips stay in sync. Usually done in
+              under a minute.
             </p>
-          </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="voiceScript">Script</Label>
+              <Textarea
+                id="voiceScript"
+                value={script}
+                onChange={(e) => setScript(e.target.value)}
+                rows={4}
+                maxLength={900}
+                placeholder="Exactly what the avatar should say…"
+              />
+              <p className="text-xs text-muted-foreground">
+                Spoken audio must fit 2–60s. Source video must be 10s or shorter (Kling lip-sync
+                limit). Lip-sync costs ≈7–14¢ and takes several minutes.
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -165,9 +218,13 @@ export function ChangeVoiceDialog({
           </Button>
           <Button
             onClick={() => void submit()}
-            disabled={submitting || !voiceId || (voices?.length ?? 0) === 0}
+            disabled={submitting || !voiceId || eligibleVoices.length === 0}
           >
-            {submitting ? "Generating voice…" : "Re-voice video"}
+            {submitting
+              ? "Working…"
+              : mode === "swap"
+                ? "Swap voice"
+                : "Re-voice video"}
           </Button>
         </DialogFooter>
       </DialogContent>

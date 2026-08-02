@@ -358,10 +358,12 @@ export function formatCents(cents: number): string {
 // page and lives outside MODELS. Labels/costs still need to render everywhere.
 
 export const KLING_LIPSYNC_LABEL = "Voice change (lip-sync)";
+export const VOICE_SWAP_LABEL = "Voice swap";
 
 /** Display label for any GenModel, including non-studio ones. */
 export function labelForGenModel(genModel: string): string {
   if (genModel === "KLING_LIPSYNC") return KLING_LIPSYNC_LABEL;
+  if (genModel === "VOICE_SWAP") return VOICE_SWAP_LABEL;
   const def = MODEL_SLUGS.map((s) => MODELS[s]).find((m) => m.genModel === genModel);
   return def?.label ?? genModel;
 }
