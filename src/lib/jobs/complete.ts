@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { r2Configured, uploadToR2 } from "@/lib/r2";
+import { parseVoicePlan, RevoiceError, startRevoice } from "@/lib/voice/revoice";
 import type { Prisma } from "@/generated/prisma/client";
 
 type OutputFile = {
@@ -124,6 +125,62 @@ export async function completeJob(jobId: string, payload: unknown): Promise<void
       },
     }),
   ]);
+
+  // A generation submitted with a voice plan chains into TTS + lip-sync
+  // automatically once its video exists. Chain failures never taint the
+  // completed video job — they surface as a FAILED lip-sync job instead.
+  const voicePlan = parseVoicePlan(job.input);
+  const videoOutput = outputs.find(
+    (o) => o.contentType?.startsWith("video/") || /\.mp4($|\?)/.test(o.url)
+  );
+  if (voicePlan && job.type === "VIDEO" && videoOutput) {
+    const params = (job.input as { params?: Record<string, unknown> })?.params ?? {};
+    const seconds = Number(params.duration);
+    let chainedJobId: string | null = null;
+    try {
+      const voice = await prisma.voice.findUnique({ where: { id: voicePlan.voiceId } });
+      if (!voice || voice.archivedAt) throw new RevoiceError("Voice no longer available", 400);
+      // Chain from the original provider URL — R2-persisted paths are
+      // app-relative and unreadable by fal.
+      const started = await startRevoice({
+        userId: job.userId,
+        voice,
+        script: voicePlan.script,
+        videoUrl: videoOutput.url,
+        sourceJobId: job.id,
+        sourceSeconds: Number.isFinite(seconds) ? seconds : null,
+      });
+      chainedJobId = started.jobId;
+    } catch (error) {
+      // Make the failure visible in the library rather than swallowing it.
+      const failed = await prisma.job.create({
+        data: {
+          userId: job.userId,
+          model: "KLING_LIPSYNC",
+          type: "VIDEO",
+          status: "FAILED",
+          input: {
+            endpoint: "fal-ai/kling-video/lipsync/audio-to-video",
+            params: {},
+            sourceJobId: job.id,
+            voiceId: voicePlan.voiceId,
+            voiceName: voicePlan.voiceName,
+          } as Prisma.InputJsonValue,
+          prompt: voicePlan.script,
+          errorMessage:
+            error instanceof Error ? error.message : "Automatic voice step failed",
+          completedAt: new Date(),
+        },
+      });
+      chainedJobId = failed.id;
+    }
+    await prisma.job.update({
+      where: { id: job.id },
+      data: {
+        input: { ...(job.input as object), chainedJobId } as Prisma.InputJsonValue,
+      },
+    });
+  }
 }
 
 /** Marks a job FAILED (idempotent — never downgrades a COMPLETED job). */

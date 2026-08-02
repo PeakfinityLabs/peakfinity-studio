@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { ReferenceUploader } from "@/components/studio/reference-uploader";
 import { PromptOptimizer } from "@/components/studio/prompt-optimizer";
 import { fetchJson } from "@/lib/http";
-import { formatCents, MODELS, type ModelSlug } from "@/lib/models/registry";
+import {
+  formatCents,
+  lipsyncCostCents,
+  MODELS,
+  type ModelSlug,
+} from "@/lib/models/registry";
+
+// One-step voiced generation (Kling only): pick a library voice + script and
+// the app auto-chains TTS + lip-sync after the video renders.
+const MAX_VOICED_SECONDS = 10;
+
+type VoiceOption = {
+  id: string;
+  name: string;
+  provider: "MINIMAX" | "ELEVENLABS";
+  previewUrl: string | null;
+};
 
 export function GenerateForm({
   slug,
@@ -37,10 +53,54 @@ export function GenerateForm({
   const [originalPrompt, setOriginalPrompt] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const supportsVoice = slug === "kling-o3";
+  const [voices, setVoices] = useState<VoiceOption[] | null>(null);
+  const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [voiceScript, setVoiceScript] = useState("");
+
+  useEffect(() => {
+    if (!supportsVoice) return;
+    fetchJson<{ voices: VoiceOption[] }>("/api/voices")
+      .then((data) => setVoices(data.voices))
+      .catch(() => setVoices([]));
+  }, [supportsVoice]);
+
+  const selectedVoice = useMemo(
+    () => voices?.find((v) => v.id === voiceId) ?? null,
+    [voices, voiceId]
+  );
+
   const set = (name: string, value: unknown) =>
     setParams((prev) => ({ ...prev, [name]: value }));
 
-  const estimatedCents = useMemo(() => def.estimateCostCents(params), [def, params]);
+  // Voiced videos are capped at 10s (Kling lip-sync limit) and the TTS audio
+  // replaces the soundtrack, so Kling's own audio option is moot.
+  const fields = useMemo(() => {
+    if (!selectedVoice) return def.fields;
+    return def.fields
+      .filter((f) => f.name !== "generate_audio")
+      .map((f) =>
+        f.kind === "select" && f.name === "duration"
+          ? { ...f, options: f.options.filter((o) => Number(o) <= MAX_VOICED_SECONDS) }
+          : f
+      );
+  }, [def.fields, selectedVoice]);
+
+  useEffect(() => {
+    if (!selectedVoice) return;
+    setParams((prev) => {
+      const next: Record<string, unknown> = { ...prev, generate_audio: false };
+      if (Number(prev.duration) > MAX_VOICED_SECONDS) next.duration = String(MAX_VOICED_SECONDS);
+      return next;
+    });
+  }, [selectedVoice]);
+
+  const estimatedCents = useMemo(() => {
+    const base = def.estimateCostCents(params);
+    if (!selectedVoice) return base;
+    const seconds = Number(params.duration);
+    return base + lipsyncCostCents(Number.isFinite(seconds) ? seconds : MAX_VOICED_SECONDS);
+  }, [def, params, selectedVoice]);
 
   const submit = async () => {
     setSubmitting(true);
@@ -48,6 +108,10 @@ export function GenerateForm({
       const body: Record<string, unknown> = { ...params };
       if (originalPrompt && originalPrompt !== params.prompt) {
         body._originalPrompt = originalPrompt;
+      }
+      if (selectedVoice) {
+        body.voiceId = selectedVoice.id;
+        body.voiceScript = voiceScript.trim();
       }
       const data = await fetchJson<{ jobId: string }>(`/api/generate/${slug}`, {
         method: "POST",
@@ -65,6 +129,7 @@ export function GenerateForm({
   const requiredUploadMissing = def.uploaders.some(
     (u) => u.required && !(u.single ? params[u.name] : (params[u.name] as string[])?.length)
   );
+  const voiceScriptMissing = Boolean(selectedVoice) && voiceScript.trim().length < 4;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -113,9 +178,65 @@ export function GenerateForm({
       </div>
 
       <div className="space-y-4">
+        {supportsVoice && (
+          <Card>
+            <CardContent className="space-y-3 pt-4">
+              <div className="space-y-1.5">
+                <Label>Voice (optional)</Label>
+                <Select
+                  value={voiceId ?? "none"}
+                  onValueChange={(v) => setVoiceId(v === "none" ? null : v)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {selectedVoice
+                        ? `${selectedVoice.name} · ${selectedVoice.provider === "ELEVENLABS" ? "ElevenLabs" : "MiniMax"}`
+                        : "No voice — video only"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No voice — video only</SelectItem>
+                    {(voices ?? []).map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.name} · {v.provider === "ELEVENLABS" ? "ElevenLabs" : "MiniMax"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedVoice?.previewUrl && (
+                  <audio
+                    key={selectedVoice.id}
+                    controls
+                    preload="none"
+                    src={selectedVoice.previewUrl}
+                    className="h-9 w-full"
+                  />
+                )}
+              </div>
+              {selectedVoice && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="voiceScript">Script</Label>
+                  <Textarea
+                    id="voiceScript"
+                    rows={3}
+                    maxLength={900}
+                    value={voiceScript}
+                    onChange={(e) => setVoiceScript(e.target.value)}
+                    placeholder="Exactly what the avatar should say…"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    After the video renders, the script is spoken in this voice and lip-synced
+                    automatically (~10 extra minutes). Duration is capped at {MAX_VOICED_SECONDS}s
+                    — a Kling lip-sync limit.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardContent className="space-y-4 pt-4">
-            {def.fields.map((field) => (
+            {fields.map((field) => (
               <div key={field.name} className="space-y-1.5">
                 {field.kind === "select" && (
                   <>
@@ -196,14 +317,19 @@ export function GenerateForm({
             <Button
               size="lg"
               className="w-full"
-              disabled={submitting || promptMissing || requiredUploadMissing}
+              disabled={submitting || promptMissing || requiredUploadMissing || voiceScriptMissing}
               onClick={() => void submit()}
             >
-              {submitting ? "Submitting…" : "Generate"}
+              {submitting ? "Submitting…" : selectedVoice ? "Generate + voice" : "Generate"}
             </Button>
             {requiredUploadMissing && (
               <p className="text-center text-xs text-muted-foreground">
                 Add the required reference first.
+              </p>
+            )}
+            {voiceScriptMissing && !requiredUploadMissing && (
+              <p className="text-center text-xs text-muted-foreground">
+                Write the script the avatar should say.
               </p>
             )}
           </CardContent>

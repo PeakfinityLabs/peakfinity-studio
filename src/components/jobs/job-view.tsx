@@ -41,6 +41,12 @@ type JobData = {
   completedAt: string | null;
   user: { id: string; name: string };
   assets: JobAsset[];
+  input?: {
+    voice?: { voiceName?: string; script?: string };
+    chainedJobId?: string | null;
+    sourceJobId?: string;
+    voiceName?: string;
+  } | null;
 };
 
 function statusBadgeVariant(status: string) {
@@ -213,6 +219,40 @@ export function JobView({
           )}
         </CardContent>
       </Card>
+
+      {job.input?.voice && (
+        <Card>
+          <CardContent className="pt-4 text-sm">
+            {job.status === "COMPLETED" && job.input.chainedJobId ? (
+              <p>
+                Voice step started automatically —{" "}
+                <Link
+                  href={`/jobs/${job.input.chainedJobId}`}
+                  className="underline underline-offset-4"
+                >
+                  follow the lip-sync job
+                </Link>{" "}
+                for the voiced result ({job.input.voice.voiceName}).
+              </p>
+            ) : (
+              <p className="text-muted-foreground">
+                Voiced generation: after filming, {job.input.voice.voiceName ?? "the voice"} speaks
+                your script and lip-sync starts automatically (~10 extra minutes).
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {job.model === "KLING_LIPSYNC" && job.input?.sourceJobId && (
+        <p className="text-xs text-muted-foreground">
+          Voice: {job.input.voiceName ?? "library voice"} · re-voiced from{" "}
+          <Link href={`/jobs/${job.input.sourceJobId}`} className="underline underline-offset-4">
+            the original generation
+          </Link>
+          .
+        </p>
+      )}
 
       {isOpen && (
         <Card>

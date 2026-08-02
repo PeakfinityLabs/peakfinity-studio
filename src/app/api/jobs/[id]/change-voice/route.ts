@@ -2,20 +2,18 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
-import { fal, falWebhookUrl } from "@/lib/fal/client";
 import { isMediaExpired } from "@/lib/media";
-import { lipsyncCostCents } from "@/lib/models/registry";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { engineAvailable, voiceEngine } from "@/lib/voice/providers";
-import type { Prisma } from "@/generated/prisma/client";
+import { engineAvailable } from "@/lib/voice/providers";
+import {
+  MAX_LIPSYNC_SOURCE_SECONDS,
+  RevoiceError,
+  startRevoice,
+} from "@/lib/voice/revoice";
 
 export const runtime = "nodejs";
 // TTS + fal re-hosting run inline before the lipsync job is queued.
 export const maxDuration = 300;
-
-const LIPSYNC_ENDPOINT = "fal-ai/kling-video/lipsync/audio-to-video";
-// Kling lipsync hard limits: source video 2–10s, audio 2–60s ≤5MB.
-const MAX_SOURCE_SECONDS = 10;
 
 const bodySchema = z.object({
   voiceId: z.string().min(1),
@@ -74,10 +72,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // in the source job's input; when it's unknown ("auto"), let fal validate.
   const sourceParams = (source.input as { params?: Record<string, unknown> })?.params ?? {};
   const sourceSeconds = Number(sourceParams.duration);
-  if (Number.isFinite(sourceSeconds) && sourceSeconds > MAX_SOURCE_SECONDS) {
+  if (Number.isFinite(sourceSeconds) && sourceSeconds > MAX_LIPSYNC_SOURCE_SECONDS) {
     return NextResponse.json(
       {
-        error: `Kling lip-sync only accepts videos up to ${MAX_SOURCE_SECONDS}s — this one is ${sourceSeconds}s. Re-run it at ≤${MAX_SOURCE_SECONDS}s first.`,
+        error: `Kling lip-sync only accepts videos up to ${MAX_LIPSYNC_SOURCE_SECONDS}s — this one is ${sourceSeconds}s. Re-run it at ≤${MAX_LIPSYNC_SOURCE_SECONDS}s first.`,
       },
       { status: 400 }
     );
@@ -109,71 +107,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  // Step 1 — TTS (fast, inline). Also resets MiniMax's 7-day retention clock.
-  let audioUrl: string;
-  let audioMs: number | null;
   try {
-    const speech = await voiceEngine(voice.provider).speak(script, voice.providerVoiceId);
-    audioUrl = speech.audioUrl;
-    audioMs = speech.durationMs;
+    const { jobId } = await startRevoice({
+      userId: me.id,
+      voice,
+      script,
+      videoUrl: videoAsset.url,
+      sourceJobId: source.id,
+      sourceSeconds: Number.isFinite(sourceSeconds) ? sourceSeconds : null,
+    });
+    return NextResponse.json({ jobId }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Voice generation failed";
+    if (error instanceof RevoiceError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    const message = error instanceof Error ? error.message : "Voice change failed";
     return NextResponse.json({ error: message }, { status: 502 });
   }
-  await prisma.voice.update({ where: { id: voice.id }, data: { lastUsedAt: new Date() } });
-
-  if (audioMs !== null && (audioMs < 2000 || audioMs > 60_000)) {
-    return NextResponse.json(
-      {
-        error:
-          audioMs < 2000
-            ? "The spoken script is under 2 seconds — write a longer line."
-            : "The spoken script is over 60 seconds — shorten it.",
-      },
-      { status: 400 }
-    );
-  }
-
-  // Step 2 — queue the lip-sync; the normal completion path takes it from here.
-  let falRequestId: string;
-  try {
-    const submitted = await fal.queue.submit(LIPSYNC_ENDPOINT, {
-      input: { video_url: videoAsset.url, audio_url: audioUrl },
-      webhookUrl: falWebhookUrl(),
-    });
-    falRequestId = submitted.request_id;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "fal submission failed";
-    return NextResponse.json({ error: `fal rejected the submission: ${message}` }, { status: 502 });
-  }
-
-  const job = await prisma.job.create({
-    data: {
-      userId: me.id,
-      model: "KLING_LIPSYNC",
-      type: "VIDEO",
-      status: "IN_QUEUE",
-      falRequestId,
-      input: {
-        endpoint: LIPSYNC_ENDPOINT,
-        params: { video_url: videoAsset.url, audio_url: audioUrl },
-        sourceJobId: source.id,
-        voiceId: voice.id,
-        voiceName: voice.name,
-        voiceProvider: voice.provider,
-      } as Prisma.InputJsonValue,
-      prompt: script,
-      estimatedCostCents: lipsyncCostCents(
-        Number.isFinite(sourceSeconds) ? sourceSeconds : MAX_SOURCE_SECONDS
-      ),
-      assets: {
-        create: [
-          { kind: "INPUT" as const, url: videoAsset.url, contentType: "video/mp4" },
-          { kind: "INPUT" as const, url: audioUrl, contentType: "audio/mpeg" },
-        ],
-      },
-    },
-  });
-
-  return NextResponse.json({ jobId: job.id }, { status: 201 });
 }
