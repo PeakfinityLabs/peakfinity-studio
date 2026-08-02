@@ -43,7 +43,7 @@ export function VoicesView() {
   const [showArchived, setShowArchived] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -65,17 +65,22 @@ export function VoicesView() {
   }, [load]);
 
   const act = async (id: string, path: string, okMessage: string) => {
-    setBusyId(id);
+    setBusyIds((prev) => new Set(prev).add(id));
     try {
-      await fetchJson(`/api/voices/${id}${path}`, {
+      const data = await fetchJson<{ warning?: string }>(`/api/voices/${id}${path}`, {
         method: path === "" ? "DELETE" : "POST",
       });
-      toast.success(okMessage);
+      if (data.warning) toast.warning(data.warning);
+      else toast.success(okMessage);
       void load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Action failed");
     } finally {
-      setBusyId(null);
+      setBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -160,7 +165,7 @@ export function VoicesView() {
                       {showArchived ? (
                         <Button
                           size="xs"
-                          disabled={busyId === v.id}
+                          disabled={busyIds.has(v.id)}
                           onClick={() => void act(v.id, "/restore", "Voice restored")}
                         >
                           Restore
@@ -170,15 +175,15 @@ export function VoicesView() {
                           <Button
                             size="xs"
                             variant="outline"
-                            disabled={busyId === v.id}
+                            disabled={busyIds.has(v.id)}
                             onClick={() => void act(v.id, "/refresh", "Preview refreshed")}
                           >
-                            {busyId === v.id ? "…" : "Refresh"}
+                            {busyIds.has(v.id) ? "…" : "Refresh"}
                           </Button>
                           <Button
                             size="xs"
                             variant="outline"
-                            disabled={busyId === v.id}
+                            disabled={busyIds.has(v.id)}
                             onClick={() => {
                               if (window.confirm(`Archive "${v.name}"? You can restore it later.`))
                                 void act(v.id, "", "Voice archived");

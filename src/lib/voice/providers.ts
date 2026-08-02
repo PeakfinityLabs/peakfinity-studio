@@ -121,8 +121,15 @@ const elevenlabs: VoiceProviderImpl = {
     const out = (await res.json()) as { voice_id?: string };
     if (!out.voice_id) throw new Error("ElevenLabs did not return a voice id");
 
-    const preview = await elevenlabs.speak(previewText, out.voice_id);
-    return { providerVoiceId: out.voice_id, previewUrl: preview.audioUrl };
+    // The clone already exists (and consumes a quota slot) at this point — if
+    // the preview fails, still return the voice so it gets persisted rather
+    // than orphaned in the account. Refresh can regenerate the preview later.
+    try {
+      const preview = await elevenlabs.speak(previewText, out.voice_id);
+      return { providerVoiceId: out.voice_id, previewUrl: preview.audioUrl };
+    } catch {
+      return { providerVoiceId: out.voice_id, previewUrl: null };
+    }
   },
 
   async speak(text, providerVoiceId) {
@@ -161,26 +168,38 @@ export type ElevenLabsAccountVoice = {
 
 export async function listElevenLabsAccountVoices(): Promise<ElevenLabsAccountVoice[]> {
   const key = elevenLabsKey();
-  const res = await fetch(`${ELEVENLABS_BASE}/v1/voices?page_size=100`, {
-    headers: { "xi-api-key": key },
-  });
-  if (!res.ok) {
-    throw new Error(await elevenLabsError(res, "Could not list ElevenLabs voices"));
-  }
-  const out = (await res.json()) as {
-    voices?: Array<{
-      voice_id: string;
-      name: string;
-      category?: string;
-      preview_url?: string | null;
-    }>;
-  };
-  return (out.voices ?? []).map((v) => ({
-    providerVoiceId: v.voice_id,
-    name: v.name,
-    category: v.category ?? "unknown",
-    previewUrl: v.preview_url ?? null,
-  }));
+  // v2 paginates (max 100/page) and the account already holds >100 voices.
+  const voices: ElevenLabsAccountVoice[] = [];
+  let pageToken: string | null = null;
+  do {
+    const url = new URL(`${ELEVENLABS_BASE}/v2/voices`);
+    url.searchParams.set("page_size", "100");
+    if (pageToken) url.searchParams.set("next_page_token", pageToken);
+    const res = await fetch(url, { headers: { "xi-api-key": key } });
+    if (!res.ok) {
+      throw new Error(await elevenLabsError(res, "Could not list ElevenLabs voices"));
+    }
+    const out = (await res.json()) as {
+      voices?: Array<{
+        voice_id: string;
+        name: string;
+        category?: string;
+        preview_url?: string | null;
+      }>;
+      has_more?: boolean;
+      next_page_token?: string | null;
+    };
+    for (const v of out.voices ?? []) {
+      voices.push({
+        providerVoiceId: v.voice_id,
+        name: v.name,
+        category: v.category ?? "unknown",
+        previewUrl: v.preview_url ?? null,
+      });
+    }
+    pageToken = out.has_more ? (out.next_page_token ?? null) : null;
+  } while (pageToken);
+  return voices;
 }
 
 const ENGINES: Record<VoiceEngineName, VoiceProviderImpl> = {

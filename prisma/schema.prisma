@@ -154,6 +154,8 @@ model Voice {
   createdByName   String
   createdAt       DateTime    @default(now())
 
+  // One library entry per engine voice — guards concurrent double-imports.
+  @@unique([provider, providerVoiceId])
   @@index([archivedAt, createdAt])
 }
 

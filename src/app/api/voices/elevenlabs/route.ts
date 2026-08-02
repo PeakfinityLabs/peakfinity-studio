@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@/generated/prisma/client";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { trackerCaps } from "@/lib/creatives";
@@ -146,6 +147,14 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ voice: { ...voice, expiresInDays: null } }, { status: 201 });
   } catch (error) {
+    // Unique(provider, providerVoiceId) — someone imported it while we were
+    // generating the preview.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        { error: "That voice is already in the library." },
+        { status: 409 }
+      );
+    }
     const message = error instanceof Error ? error.message : "Voice import failed";
     return NextResponse.json({ error: message }, { status: 502 });
   }

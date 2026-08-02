@@ -40,20 +40,26 @@ export function ImportVoiceDialog({
   onImported: () => void;
 }) {
   const [catalog, setCatalog] = useState<AccountVoice[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
+  const loadCatalog = () => {
     setCatalog(null);
+    setLoadError(null);
     fetchJson<{ voices: AccountVoice[] }>("/api/voices/elevenlabs")
       .then((data) => setCatalog(data.voices))
       .catch((error) => {
-        toast.error(
+        setLoadError(
           error instanceof Error ? error.message : "Could not load the ElevenLabs account"
         );
-        setCatalog([]);
       });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery("");
+    loadCatalog();
   }, [open]);
 
   const filtered = useMemo(() => {
@@ -105,7 +111,14 @@ export function ImportVoiceDialog({
         />
 
         <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
-          {catalog === null ? (
+          {loadError ? (
+            <div className="space-y-3 py-8 text-center">
+              <p className="text-sm text-destructive">{loadError}</p>
+              <Button size="sm" variant="outline" onClick={loadCatalog}>
+                Retry
+              </Button>
+            </div>
+          ) : catalog === null ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               Loading the account&apos;s voices…
             </p>

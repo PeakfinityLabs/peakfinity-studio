@@ -26,10 +26,16 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   try {
     const result = await voiceEngine(voice.provider).speak(PREVIEW_TEXT, voice.providerVoiceId);
-    const updated = await prisma.voice.update({
-      where: { id },
+    // Guarded on archivedAt so a slow refresh can't rewrite a row that was
+    // archived while the TTS was running.
+    const { count } = await prisma.voice.updateMany({
+      where: { id, archivedAt: null },
       data: { previewUrl: result.audioUrl, lastUsedAt: new Date() },
     });
+    if (count === 0) {
+      return NextResponse.json({ error: "Voice was archived meanwhile" }, { status: 409 });
+    }
+    const updated = await prisma.voice.findUnique({ where: { id } });
     return NextResponse.json({ voice: updated });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Refresh failed";
