@@ -129,6 +129,34 @@ model Creative {
   @@index([archivedAt])
 }
 
+enum VoiceEngine {
+  MINIMAX
+  ELEVENLABS
+}
+
+/// A saved voice for talking-avatar videos: either cloned via MiniMax (on fal)
+/// or via ElevenLabs (direct API). providerVoiceId is the engine's own id
+/// (MiniMax custom_voice_id / ElevenLabs voice_id).
+model Voice {
+  id              String      @id @default(cuid())
+  name            String
+  provider        VoiceEngine
+  providerVoiceId String
+  /// Reference sample the voice was cloned from (fal storage URL).
+  sampleUrl       String?
+  /// Short generated clip for the picker. Also proves the clone works.
+  previewUrl      String?
+  /// MiniMax deletes clones unused by TTS for 7 days; tracked to warn + refresh.
+  lastUsedAt      DateTime?
+  archivedAt      DateTime?
+  archivedBy      String?
+  createdById     String
+  createdByName   String
+  createdAt       DateTime    @default(now())
+
+  @@index([archivedAt, createdAt])
+}
+
 /// Append-only audit trail: who changed what on a creative, and when.
 model CreativeChange {
   id         String   @id @default(cuid())

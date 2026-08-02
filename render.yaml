@@ -31,6 +31,9 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Voice cloning via ElevenLabs (optional; MiniMax-on-fal works without it)
+      - key: ELEVENLABS_API_KEY
+        sync: false
       # Media persistence is optional: without R2_* vars, media is served from
       # fal's CDN (~7-day retention). To persist permanently, add R2_ACCOUNT_ID,
       # R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET in the dashboard.

@@ -29,6 +29,8 @@ export const config = {
     "/usage/:path*",
     "/jobs/:path*",
     "/admin/:path*",
+    "/tracker",
+    "/voices",
     "/pending",
     "/api/generate/:path*",
     "/api/jobs/:path*",
@@ -37,5 +39,7 @@ export const config = {
     "/api/usage/:path*",
     "/api/media/:path*",
     "/api/admin/:path*",
+    "/api/voices/:path*",
+    "/api/creatives/:path*",
   ],
 };

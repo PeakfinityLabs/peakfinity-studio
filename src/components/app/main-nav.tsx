@@ -9,6 +9,8 @@ const baseLinks = [
   { href: "/library", label: "Library" },
   // Editors see only their own assignments here; admins see everything.
   { href: "/tracker", label: "Tracker" },
+  // Everyone can browse; only admins + strategists can add/manage.
+  { href: "/voices", label: "Voices" },
 ];
 
 // Usage (team spend) and Admin are admin-only.
