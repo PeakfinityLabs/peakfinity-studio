@@ -35,6 +35,40 @@ Route B satisfies "change the voice" *and* "clone a voice", and reuses the
 talking-head optimizer presets we already shipped (the script is already the
 prompt-box input for those styles).
 
+### Note: Higgsfield's "change voice" button is Route B
+Higgsfield's UX (a button listing saved custom voices + presets) is the same
+pipeline described here, with a voice library in front of it. Adopting Route B
+means matching that UX; the open decision is only **which voice engine** sits in
+steps 1–2.
+
+### Voice engine options (steps 1–2 only — the pipeline is identical)
+
+| | Cloning | Quality | Keys / billing | Status |
+|---|---|---|---|---|
+| **MiniMax on fal** | `minimax/voice-clone`, native fal endpoint | Good | FAL_KEY only | Works today |
+| **ElevenLabs via fal** (`fal-ai/elevenlabs/tts/eleven-v3`) | **No cloning endpoint on fal** | Best-in-class for expressive ad reads | FAL_KEY only | ⚠ see below |
+| **ElevenLabs direct** | Instant (~1 min sample, paid plan) or Professional (30+ min) | Best-in-class | 2nd vendor + `ELEVENLABS_API_KEY` | Extra integration |
+
+⚠ **Decisive unknown — verify before choosing:** ElevenLabs voice IDs are
+**account-scoped**. fal hosts ElevenLabs *TTS*, but cloning happens in an
+ElevenLabs account. If fal calls ElevenLabs with fal's own account, custom voice
+IDs from *our* account will not resolve, and there is no confirmed BYOK
+(`elevenlabs_api_key`) input on fal's endpoint. Research was inconclusive (fal
+docs rate-limited). **Test this first**: clone a voice in an ElevenLabs account,
+then try that `voice_id` against `fal-ai/elevenlabs/tts/eleven-v3`.
+- If it works → ElevenLabs for everything through fal: best quality, one key.
+- If not → either MiniMax-on-fal (one key, good) or ElevenLabs-direct (best
+  quality, second key + bill).
+
+**Design implication:** make the voice engine a **swappable provider** behind an
+interface (same pattern as `lib/optimizer/provider.ts`). Steps 3–4 (Kling +
+lipsync) never change, so the engine can be swapped after a quality bake-off
+without touching the pipeline. Ship whichever wins; don't block the build on it.
+
+**Suggested bake-off (cheap, do before phase 1):** clone the same voice in
+MiniMax and ElevenLabs, generate the same 15-word ad script in each, and let
+Rahul/Jonah pick by ear. Voice quality is the whole point of the feature.
+
 ---
 
 ## 2. Hard constraints (these shape the UX — do not skip)
