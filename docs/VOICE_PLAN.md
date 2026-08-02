@@ -49,7 +49,40 @@ steps 1–2.
 | **ElevenLabs via fal** (`fal-ai/elevenlabs/tts/eleven-v3`) | **No cloning endpoint on fal** | Best-in-class for expressive ad reads | FAL_KEY only | ⚠ see below |
 | **ElevenLabs direct** | Instant (~1 min sample, paid plan) or Professional (30+ min) | Best-in-class | 2nd vendor + `ELEVENLABS_API_KEY` | Extra integration |
 
-⚠ **Decisive unknown — verify before choosing:** ElevenLabs voice IDs are
+### DECIDED (2026-08): ship BOTH providers
+Rahul has an ElevenLabs **paid** key, which unlocks Instant Voice Cloning
+(`POST /v1/voices/add`, Starter+ plan) — so we call ElevenLabs **directly** and
+the fal account-scoping problem below becomes moot. Build both engines behind
+one interface and let editors choose per voice.
+
+```ts
+// lib/voice/provider.ts
+export type VoiceProvider = {
+  clone(sampleUrl: string, name: string): Promise<string>;  // → providerVoiceId
+  speak(text: string, providerVoiceId: string): Promise<string>; // → public audio URL
+};
+// implementations: minimax (via fal), elevenlabs (direct, ELEVENLABS_API_KEY)
+```
+
+`Voice` gains `provider` ("MINIMAX" | "ELEVENLABS") and `providerVoiceId`.
+
+Provider differences that matter:
+- **ElevenLabs returns audio bytes**, not a URL → upload the result to fal
+  storage (`fal.storage.upload`, already used by `/api/upload`) to get a public
+  URL for the lipsync step.
+- **The 7-day expiry applies to MiniMax only.** ElevenLabs voices persist in the
+  account, so the expiry countdown/refresh in §4 should be MiniMax-specific.
+- New env var: `ELEVENLABS_API_KEY` (add to `.env.example` + Render).
+
+**Lip-sync quality is provider-independent.** The lipsync model consumes a
+plain audio file and has no idea which TTS produced it — so neither engine syncs
+"better". Sync quality is driven by: clean speech (no music/noise), language
+(Kling lipsync is native EN/ZH; others get translated), natural pacing, and a
+front-facing, clearly-visible face in the source video. Choose the engine on
+**voice quality**, not sync.
+
+⚠ **Only relevant if we ever want ElevenLabs *through fal* instead of direct:**
+ElevenLabs voice IDs are
 **account-scoped**. fal hosts ElevenLabs *TTS*, but cloning happens in an
 ElevenLabs account. If fal calls ElevenLabs with fal's own account, custom voice
 IDs from *our* account will not resolve, and there is no confirmed BYOK
