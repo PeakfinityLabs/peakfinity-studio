@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
-import { fal } from "@/lib/fal/client";
+import { fal, falWebhookUrl } from "@/lib/fal/client";
 import { isModelSlug, MODELS } from "@/lib/models/registry";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { Prisma } from "@/generated/prisma/client";
@@ -9,13 +9,6 @@ import type { Prisma } from "@/generated/prisma/client";
 const GENERATE_LIMIT = 10; // per user per minute — protects the fal budget
 
 export const runtime = "nodejs";
-
-function webhookUrl(): string | undefined {
-  const base = process.env.APP_BASE_URL;
-  // fal can't call back to localhost — local dev relies on the polling fallback.
-  if (!base || /localhost|127\.0\.0\.1/.test(base)) return undefined;
-  return `${base.replace(/\/$/, "")}/api/fal/webhook`;
-}
 
 function collectInputUrls(params: Record<string, unknown>): string[] {
   const urls: string[] = [];
@@ -72,7 +65,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
   try {
     const submitted = await fal.queue.submit(endpoint, {
       input: falInput,
-      webhookUrl: webhookUrl(),
+      webhookUrl: falWebhookUrl(),
     });
     falRequestId = submitted.request_id;
   } catch (error) {

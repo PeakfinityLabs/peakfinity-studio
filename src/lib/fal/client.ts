@@ -6,3 +6,11 @@ import { fal } from "@fal-ai/client";
 fal.config({ credentials: process.env.FAL_KEY });
 
 export { fal };
+
+/** Webhook target for queue submissions, or undefined when unreachable. */
+export function falWebhookUrl(): string | undefined {
+  const base = process.env.APP_BASE_URL;
+  // fal can't call back to localhost — local dev relies on the polling fallback.
+  if (!base || /localhost|127\.0\.0\.1/.test(base)) return undefined;
+  return `${base.replace(/\/$/, "")}/api/fal/webhook`;
+}

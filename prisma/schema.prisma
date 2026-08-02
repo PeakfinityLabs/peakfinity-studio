@@ -23,6 +23,8 @@ enum GenModel {
   GPT_IMAGE_2
   KLING_O3
   SEEDANCE_2
+  /// Re-voice an existing generation: TTS with a library voice + Kling lip-sync.
+  KLING_LIPSYNC
 }
 
 enum JobType {

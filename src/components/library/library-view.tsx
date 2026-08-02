@@ -14,8 +14,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ChangeVoiceDialog } from "@/components/jobs/change-voice-dialog";
 import { fetchJson } from "@/lib/http";
-import { formatCents, MODEL_SLUGS, MODELS } from "@/lib/models/registry";
+import {
+  formatCents,
+  KLING_LIPSYNC_LABEL,
+  labelForGenModel,
+  MODEL_SLUGS,
+  MODELS,
+} from "@/lib/models/registry";
 import { isMediaExpired } from "@/lib/media";
 
 type LibraryJob = {
@@ -37,6 +44,7 @@ type JobsResponse = { jobs: LibraryJob[]; nextCursor: string | null };
 const MODEL_FILTERS = [
   { value: "all", label: "All models" },
   ...MODEL_SLUGS.map((slug) => ({ value: MODELS[slug].genModel, label: MODELS[slug].label })),
+  { value: "KLING_LIPSYNC", label: KLING_LIPSYNC_LABEL },
 ];
 const TYPE_FILTERS = [
   { value: "all", label: "Images + video" },
@@ -69,6 +77,7 @@ export function LibraryView({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [voiceJobId, setVoiceJobId] = useState<string | null>(null);
   const [filters, setFilters] = useState({ model: "all", type: "all", days: "all", owner: "all" });
 
   const query = useCallback(
@@ -204,7 +213,7 @@ export function LibraryView({
                   </Link>
                   <CardContent className="space-y-2 p-3">
                     <div className="flex items-center gap-2">
-                      <Badge variant="secondary">{slug ? MODELS[slug].label : job.model}</Badge>
+                      <Badge variant="secondary">{labelForGenModel(job.model)}</Badge>
                       {job.status !== "COMPLETED" && (
                         <Badge variant={job.status === "FAILED" ? "destructive" : "outline"}>
                           {job.status.replace("_", " ").toLowerCase()}
@@ -220,6 +229,18 @@ export function LibraryView({
                         {job.user.name} · {new Date(job.createdAt).toLocaleDateString()}
                       </span>
                       <div className="flex shrink-0 items-center gap-3">
+                        {job.type === "VIDEO" &&
+                          job.status === "COMPLETED" &&
+                          thumb &&
+                          !isMediaExpired(job.completedAt, thumb.url) && (
+                            <button
+                              type="button"
+                              onClick={() => setVoiceJobId(job.id)}
+                              className="text-foreground underline-offset-4 hover:underline"
+                            >
+                              Change voice
+                            </button>
+                          )}
                         {slug && (
                           <Link
                             href={`/studio/${slug}?rerun=${job.id}`}
@@ -254,6 +275,12 @@ export function LibraryView({
           )}
         </>
       )}
+
+      <ChangeVoiceDialog
+        open={voiceJobId !== null}
+        onOpenChange={(o) => !o && setVoiceJobId(null)}
+        jobId={voiceJobId}
+      />
     </div>
   );
 }

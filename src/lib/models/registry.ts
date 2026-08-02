@@ -351,3 +351,22 @@ export function isModelSlug(value: string): value is ModelSlug {
 export function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
+
+// ─── Kling lip-sync (change-voice) — not a studio model ──────────────────────
+// Created from an existing generation via "Change voice", so it has no studio
+// page and lives outside MODELS. Labels/costs still need to render everywhere.
+
+export const KLING_LIPSYNC_LABEL = "Voice change (lip-sync)";
+
+/** Display label for any GenModel, including non-studio ones. */
+export function labelForGenModel(genModel: string): string {
+  if (genModel === "KLING_LIPSYNC") return KLING_LIPSYNC_LABEL;
+  const def = MODEL_SLUGS.map((s) => MODELS[s]).find((m) => m.genModel === genModel);
+  return def?.label ?? genModel;
+}
+
+/** $0.014 per input-second, billed in 5s increments (fal Kling lipsync). */
+export function lipsyncCostCents(videoSeconds: number): number {
+  const billedSeconds = Math.max(5, Math.ceil(videoSeconds / 5) * 5);
+  return Math.round(billedSeconds * 1.4);
+}

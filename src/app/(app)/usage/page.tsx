@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCents, MODEL_SLUGS, MODELS } from "@/lib/models/registry";
+import { formatCents, labelForGenModel } from "@/lib/models/registry";
 import { getUsageSummary } from "@/lib/usage";
 
 export const metadata = { title: "Usage — Peakfinity Studio" };
@@ -23,8 +23,7 @@ const PERIODS = [
 ];
 
 function modelLabel(genModel: string): string {
-  const slug = MODEL_SLUGS.find((s) => MODELS[s].genModel === genModel);
-  return slug ? MODELS[slug].label : genModel;
+  return labelForGenModel(genModel);
 }
 
 export default async function UsagePage({

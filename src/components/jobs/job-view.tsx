@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ChangeVoiceDialog } from "@/components/jobs/change-voice-dialog";
 import { fetchJson } from "@/lib/http";
-import { formatCents, MODEL_SLUGS, MODELS } from "@/lib/models/registry";
+import { formatCents, labelForGenModel, MODEL_SLUGS, MODELS } from "@/lib/models/registry";
 import { FAL_MEDIA_RETENTION_DAYS, isMediaExpired } from "@/lib/media";
 
 const POLL_MS = 3000;
@@ -82,6 +83,7 @@ export function JobView({
   const [job, setJob] = useState<JobData | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchJob = useCallback(async () => {
@@ -146,6 +148,12 @@ export function JobView({
   const isOpen = OPEN_STATUSES.includes(job.status);
   const outputs = job.assets.filter((a) => a.kind === "OUTPUT");
   const lines = logLines(job.logs);
+  const canChangeVoice =
+    job.type === "VIDEO" &&
+    job.status === "COMPLETED" &&
+    outputs.some(
+      (a) => a.contentType.startsWith("video/") && !isMediaExpired(job.completedAt, a.url)
+    );
 
   return (
     <div className="space-y-6">
@@ -157,7 +165,7 @@ export function JobView({
             {job.user.name}
           </p>
           <div className="flex items-center gap-3">
-            <h1 className="text-display text-2xl">{def?.label ?? job.model}</h1>
+            <h1 className="text-display text-2xl">{labelForGenModel(job.model)}</h1>
             <Badge variant={statusBadgeVariant(job.status)}>{job.status.replace("_", " ")}</Badge>
           </div>
         </div>
@@ -165,6 +173,11 @@ export function JobView({
           {isOpen && (
             <Button variant="outline" size="sm" disabled={cancelling} onClick={() => void cancel()}>
               {cancelling ? "Cancelling…" : "Cancel"}
+            </Button>
+          )}
+          {canChangeVoice && (
+            <Button size="sm" onClick={() => setVoiceOpen(true)}>
+              Change voice
             </Button>
           )}
           {def && (
@@ -221,8 +234,9 @@ export function JobView({
             )}
             {job.type === "VIDEO" && (
               <p className="text-xs text-muted-foreground">
-                Video jobs can take several minutes — you can leave this page; the job keeps
-                running and lands in the Library.
+                {job.model === "KLING_LIPSYNC"
+                  ? "Lip-sync typically takes ~10–12 minutes regardless of length — you can leave this page; the job keeps running and lands in the Library."
+                  : "Video jobs can take several minutes — you can leave this page; the job keeps running and lands in the Library."}
               </p>
             )}
           </CardContent>
@@ -289,6 +303,8 @@ export function JobView({
           </div>
         </>
       )}
+
+      <ChangeVoiceDialog open={voiceOpen} onOpenChange={setVoiceOpen} jobId={job.id} />
     </div>
   );
 }
