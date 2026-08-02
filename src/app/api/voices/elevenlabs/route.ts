@@ -7,6 +7,7 @@ import { trackerCaps } from "@/lib/creatives";
 import {
   engineAvailable,
   listElevenLabsAccountVoices,
+  listElevenLabsRecentUsage,
   PREVIEW_TEXT,
   voiceEngine,
 } from "@/lib/voice/providers";
@@ -49,8 +50,9 @@ export async function GET() {
   if (guard) return guard;
 
   try {
-    const [account, existing] = await Promise.all([
+    const [account, usage, existing] = await Promise.all([
       listElevenLabsAccountVoices(),
+      listElevenLabsRecentUsage(),
       prisma.voice.findMany({
         where: { provider: "ELEVENLABS" },
         select: { providerVoiceId: true, archivedAt: true },
@@ -58,18 +60,23 @@ export async function GET() {
     ]);
     const imported = new Map(existing.map((v) => [v.providerVoiceId, v.archivedAt === null]));
 
-    // Custom voices first (those are the ones the team actually cloned),
-    // then the stock catalog, alphabetical within each group.
+    // Recently used voices first (that's what the team will want to import),
+    // then custom clones, then the stock catalog, alphabetical within ties.
     const rank: Record<string, number> = { cloned: 0, generated: 0, professional: 1, premade: 2 };
     const voices = account
       .map((v) => ({
         ...v,
         imported: imported.has(v.providerVoiceId),
         importedActive: imported.get(v.providerVoiceId) ?? false,
+        lastUsedAt: usage.has(v.providerVoiceId)
+          ? new Date(usage.get(v.providerVoiceId)! * 1000).toISOString()
+          : null,
       }))
       .sort(
         (a, b) =>
-          (rank[a.category] ?? 3) - (rank[b.category] ?? 3) || a.name.localeCompare(b.name)
+          (usage.get(b.providerVoiceId) ?? 0) - (usage.get(a.providerVoiceId) ?? 0) ||
+          (rank[a.category] ?? 3) - (rank[b.category] ?? 3) ||
+          a.name.localeCompare(b.name)
       );
     return NextResponse.json({ voices });
   } catch (error) {

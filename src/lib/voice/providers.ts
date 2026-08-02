@@ -202,6 +202,42 @@ export async function listElevenLabsAccountVoices(): Promise<ElevenLabsAccountVo
   return voices;
 }
 
+/**
+ * When each account voice last generated speech, from the account's TTS
+ * history (up to ~300 recent generations). Best effort — an API hiccup
+ * returns an empty map rather than failing the caller.
+ */
+export async function listElevenLabsRecentUsage(): Promise<Map<string, number>> {
+  const lastUsed = new Map<string, number>();
+  try {
+    const key = elevenLabsKey();
+    let after: string | null = null;
+    for (let page = 0; page < 3; page++) {
+      const url = new URL(`${ELEVENLABS_BASE}/v1/history`);
+      url.searchParams.set("page_size", "100");
+      if (after) url.searchParams.set("start_after_history_item_id", after);
+      const res = await fetch(url, { headers: { "xi-api-key": key } });
+      if (!res.ok) break;
+      const out = (await res.json()) as {
+        history?: Array<{ history_item_id: string; voice_id?: string | null; date_unix?: number }>;
+        has_more?: boolean;
+        last_history_item_id?: string | null;
+      };
+      for (const item of out.history ?? []) {
+        if (!item.voice_id || !item.date_unix) continue;
+        if ((lastUsed.get(item.voice_id) ?? 0) < item.date_unix) {
+          lastUsed.set(item.voice_id, item.date_unix);
+        }
+      }
+      if (!out.has_more || !out.last_history_item_id) break;
+      after = out.last_history_item_id;
+    }
+  } catch {
+    // history is a nice-to-have; the catalog works without it
+  }
+  return lastUsed;
+}
+
 const ENGINES: Record<VoiceEngineName, VoiceProviderImpl> = {
   MINIMAX: minimax,
   ELEVENLABS: elevenlabs,
