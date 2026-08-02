@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -37,12 +38,18 @@ type VoiceOption = {
   previewUrl: string | null;
 };
 
+/** Non-voice choices in the Audio dropdown. */
+const AUDIO_DEFAULT = "__default__"; // Kling generates its own audio
+const AUDIO_SILENT = "__silent__";
+
 export function GenerateForm({
   slug,
   initialParams,
+  initialVoice,
 }: {
   slug: ModelSlug;
   initialParams?: Record<string, unknown>;
+  initialVoice?: { voiceId: string; script: string } | null;
 }) {
   const def = MODELS[slug];
   const router = useRouter();
@@ -55,8 +62,15 @@ export function GenerateForm({
 
   const supportsVoice = slug === "kling-o3";
   const [voices, setVoices] = useState<VoiceOption[] | null>(null);
-  const [voiceId, setVoiceId] = useState<string | null>(null);
-  const [voiceScript, setVoiceScript] = useState("");
+  // Audio choice: Kling's own audio (default), silent, or a library voice id.
+  const [audioChoice, setAudioChoice] = useState<string>(() => {
+    if (initialVoice) return initialVoice.voiceId;
+    if (initialParams && initialParams.generate_audio === false) return AUDIO_SILENT;
+    return AUDIO_DEFAULT;
+  });
+  const [voiceScript, setVoiceScript] = useState(initialVoice?.script ?? "");
+  const voiceId =
+    audioChoice === AUDIO_DEFAULT || audioChoice === AUDIO_SILENT ? null : audioChoice;
 
   useEffect(() => {
     if (!supportsVoice) return;
@@ -73,27 +87,31 @@ export function GenerateForm({
   const set = (name: string, value: unknown) =>
     setParams((prev) => ({ ...prev, [name]: value }));
 
-  // Voiced videos are capped at 10s (Kling lip-sync limit) and the TTS audio
-  // replaces the soundtrack, so Kling's own audio option is moot.
+  // Voiced videos are capped at 10s (Kling lip-sync limit).
   const fields = useMemo(() => {
     if (!selectedVoice) return def.fields;
-    return def.fields
-      .filter((f) => f.name !== "generate_audio")
-      .map((f) =>
-        f.kind === "select" && f.name === "duration"
-          ? { ...f, options: f.options.filter((o) => Number(o) <= MAX_VOICED_SECONDS) }
-          : f
-      );
+    return def.fields.map((f) =>
+      f.kind === "select" && f.name === "duration"
+        ? { ...f, options: f.options.filter((o) => Number(o) <= MAX_VOICED_SECONDS) }
+        : f
+    );
   }, [def.fields, selectedVoice]);
 
+  // The Audio dropdown owns generate_audio: Kling audio for Default, off for
+  // Silent, and off for voices too (the TTS replaces the soundtrack).
   useEffect(() => {
-    if (!selectedVoice) return;
+    if (!supportsVoice) return;
     setParams((prev) => {
-      const next: Record<string, unknown> = { ...prev, generate_audio: false };
-      if (Number(prev.duration) > MAX_VOICED_SECONDS) next.duration = String(MAX_VOICED_SECONDS);
+      const next: Record<string, unknown> = {
+        ...prev,
+        generate_audio: audioChoice === AUDIO_DEFAULT,
+      };
+      if (audioChoice !== AUDIO_DEFAULT && audioChoice !== AUDIO_SILENT) {
+        if (Number(prev.duration) > MAX_VOICED_SECONDS) next.duration = String(MAX_VOICED_SECONDS);
+      }
       return next;
     });
-  }, [selectedVoice]);
+  }, [supportsVoice, audioChoice]);
 
   const estimatedCents = useMemo(() => {
     const base = def.estimateCostCents(params);
@@ -182,23 +200,43 @@ export function GenerateForm({
           <Card>
             <CardContent className="space-y-3 pt-4">
               <div className="space-y-1.5">
-                <Label>Voice (optional)</Label>
-                <Select
-                  value={voiceId ?? "none"}
-                  onValueChange={(v) => setVoiceId(v === "none" ? null : v)}
-                >
+                <Label>Audio</Label>
+                <Select value={audioChoice} onValueChange={(v) => v && setAudioChoice(v)}>
                   <SelectTrigger className="w-full">
                     <SelectValue>
-                      {selectedVoice
-                        ? `${selectedVoice.name} · ${selectedVoice.provider === "ELEVENLABS" ? "ElevenLabs" : "MiniMax"}`
-                        : "No voice — video only"}
+                      {audioChoice === AUDIO_DEFAULT
+                        ? "Default — Kling generates the audio"
+                        : audioChoice === AUDIO_SILENT
+                          ? "Silent — no audio"
+                          : selectedVoice
+                            ? `${selectedVoice.name} · ${selectedVoice.provider === "ELEVENLABS" ? "ElevenLabs" : "MiniMax"}`
+                            : "Loading voice…"}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">No voice — video only</SelectItem>
+                    <SelectItem value={AUDIO_DEFAULT}>
+                      <div className="flex flex-col">
+                        <span>Default — Kling generates the audio</span>
+                        <span className="text-xs text-muted-foreground">
+                          Ambient sound + generic speech, chosen by Kling
+                        </span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value={AUDIO_SILENT}>
+                      <div className="flex flex-col">
+                        <span>Silent — no audio</span>
+                        <span className="text-xs text-muted-foreground">−25% cost</span>
+                      </div>
+                    </SelectItem>
                     {(voices ?? []).map((v) => (
                       <SelectItem key={v.id} value={v.id}>
-                        {v.name} · {v.provider === "ELEVENLABS" ? "ElevenLabs" : "MiniMax"}
+                        <div className="flex flex-col">
+                          <span>{v.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {v.provider === "ELEVENLABS" ? "ElevenLabs" : "MiniMax"} voice — speaks
+                            your script, lip-synced
+                          </span>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -212,6 +250,12 @@ export function GenerateForm({
                     className="h-9 w-full"
                   />
                 )}
+                <Button
+                  variant="outline"
+                  size="xs"
+                  nativeButton={false}
+                  render={<Link href="/voices">Clone or manage voices →</Link>}
+                />
               </div>
               {selectedVoice && (
                 <div className="space-y-1.5">

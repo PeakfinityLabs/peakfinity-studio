@@ -93,17 +93,25 @@ export function JobView({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchJob = useCallback(async () => {
-    let status: string | undefined;
+    let keepPolling = false;
     try {
       const data = await fetchJson<{ job: JobData }>(`/api/jobs/${jobId}`, { cache: "no-store" });
       setJob(data.job);
-      status = data.job.status;
+      const chained = data.job.input?.chainedJobId;
+      keepPolling =
+        OPEN_STATUSES.includes(data.job.status) ||
+        // A voiced generation isn't really done until its lip-sync chain has
+        // been created — keep polling through the TTS window so the link
+        // appears without a manual refresh.
+        (data.job.status === "COMPLETED" &&
+          Boolean(data.job.input?.voice) &&
+          (typeof chained !== "string" || chained === "pending"));
     } catch {
       // Transient error (server restart, blip) — keep polling so the job still
       // resolves once the server is back, rather than stalling.
-      status = "IN_PROGRESS";
+      keepPolling = true;
     }
-    if (status && OPEN_STATUSES.includes(status)) {
+    if (keepPolling) {
       timer.current = setTimeout(() => void fetchJob(), POLL_MS);
     }
   }, [jobId]);
@@ -223,7 +231,9 @@ export function JobView({
       {job.input?.voice && (
         <Card>
           <CardContent className="pt-4 text-sm">
-            {job.status === "COMPLETED" && job.input.chainedJobId ? (
+            {job.status === "COMPLETED" &&
+            job.input.chainedJobId &&
+            job.input.chainedJobId !== "pending" ? (
               <p>
                 Voice step started automatically —{" "}
                 <Link

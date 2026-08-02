@@ -81,16 +81,24 @@ export async function completeJob(jobId: string, payload: unknown): Promise<void
     let fileSize = output.fileSize;
 
     if (persistToR2) {
-      const res = await fetch(output.url);
-      if (!res.ok) throw new Error(`Failed to download fal output (${res.status}): ${output.url}`);
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      const contentType =
-        output.contentType ?? res.headers.get("content-type") ?? "application/octet-stream";
-      const ext = guessExtension(contentType, output.url);
-      r2Key = `outputs/${jobId}/${index}.${ext}`;
-      await uploadToR2(r2Key, bytes, contentType);
-      url = `/api/media/${r2Key}`;
-      fileSize = fileSize ?? bytes.byteLength;
+      // Best-effort: the completion claim is already consumed, so a persistence
+      // failure must not throw — fall back to the fal URL rather than leaving a
+      // COMPLETED job with no assets at all.
+      try {
+        const res = await fetch(output.url);
+        if (!res.ok) throw new Error(`Failed to download fal output (${res.status})`);
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        const contentType =
+          output.contentType ?? res.headers.get("content-type") ?? "application/octet-stream";
+        const ext = guessExtension(contentType, output.url);
+        r2Key = `outputs/${jobId}/${index}.${ext}`;
+        await uploadToR2(r2Key, bytes, contentType);
+        url = `/api/media/${r2Key}`;
+        fileSize = fileSize ?? bytes.byteLength;
+      } catch {
+        url = output.url;
+        r2Key = null;
+      }
     }
 
     assets.push({
@@ -127,60 +135,99 @@ export async function completeJob(jobId: string, payload: unknown): Promise<void
   ]);
 
   // A generation submitted with a voice plan chains into TTS + lip-sync
-  // automatically once its video exists. Chain failures never taint the
-  // completed video job — they surface as a FAILED lip-sync job instead.
+  // automatically once its video exists.
+  await maybeRunVoiceChain(jobId, outputs);
+}
+
+/** How long a "pending" chain claim is trusted before a retry may re-claim it. */
+const CHAIN_CLAIM_TTL_MS = 15 * 60_000;
+
+/**
+ * Runs the automatic voice step for a completed video that carries a voice
+ * plan. Safe to call repeatedly (webhook, poller, page views): an atomic
+ * jsonb claim ("pending") admits exactly one runner, and a claim orphaned by
+ * a crash/deploy becomes retryable after 15 minutes. Chain failures never
+ * taint the completed video job — they surface as a FAILED lip-sync job.
+ */
+export async function maybeRunVoiceChain(jobId: string, knownOutputs?: OutputFile[]) {
+  const job = await prisma.job.findUnique({ where: { id: jobId } });
+  if (!job || job.status !== "COMPLETED" || job.type !== "VIDEO") return;
   const voicePlan = parseVoicePlan(job.input);
-  const videoOutput = outputs.find(
+  if (!voicePlan) return;
+
+  const chained = (job.input as { chainedJobId?: unknown }).chainedJobId;
+  if (typeof chained === "string" && chained !== "pending") return;
+
+  // The chain must feed fal a URL it can fetch — the original provider URL,
+  // never an app-relative /api/media path.
+  const outputs = knownOutputs ?? extractOutputs(job.actualMetrics);
+  let videoOutput = outputs.find(
     (o) => o.contentType?.startsWith("video/") || /\.mp4($|\?)/.test(o.url)
   );
-  if (voicePlan && job.type === "VIDEO" && videoOutput) {
-    const params = (job.input as { params?: Record<string, unknown> })?.params ?? {};
-    const seconds = Number(params.duration);
-    let chainedJobId: string | null = null;
-    try {
-      const voice = await prisma.voice.findUnique({ where: { id: voicePlan.voiceId } });
-      if (!voice || voice.archivedAt) throw new RevoiceError("Voice no longer available", 400);
-      // Chain from the original provider URL — R2-persisted paths are
-      // app-relative and unreadable by fal.
-      const started = await startRevoice({
-        userId: job.userId,
-        voice,
-        script: voicePlan.script,
-        videoUrl: videoOutput.url,
-        sourceJobId: job.id,
-        sourceSeconds: Number.isFinite(seconds) ? seconds : null,
-      });
-      chainedJobId = started.jobId;
-    } catch (error) {
-      // Make the failure visible in the library rather than swallowing it.
-      const failed = await prisma.job.create({
-        data: {
-          userId: job.userId,
-          model: "KLING_LIPSYNC",
-          type: "VIDEO",
-          status: "FAILED",
-          input: {
-            endpoint: "fal-ai/kling-video/lipsync/audio-to-video",
-            params: {},
-            sourceJobId: job.id,
-            voiceId: voicePlan.voiceId,
-            voiceName: voicePlan.voiceName,
-          } as Prisma.InputJsonValue,
-          prompt: voicePlan.script,
-          errorMessage:
-            error instanceof Error ? error.message : "Automatic voice step failed",
-          completedAt: new Date(),
-        },
-      });
-      chainedJobId = failed.id;
+  if (!videoOutput) {
+    const asset = await prisma.asset.findFirst({
+      where: { jobId, kind: "OUTPUT", url: { not: { startsWith: "/api/media/" } } },
+    });
+    if (asset && (asset.contentType.startsWith("video/") || /\.mp4($|\?)/.test(asset.url))) {
+      videoOutput = { url: asset.url, contentType: asset.contentType };
     }
-    await prisma.job.update({
-      where: { id: job.id },
+  }
+  if (!videoOutput) return;
+
+  // Atomic claim: exactly one caller wins; a stale "pending" (crashed runner)
+  // is reclaimable once the job has been completed longer than the TTL.
+  const staleBefore = new Date(Date.now() - CHAIN_CLAIM_TTL_MS);
+  const claimed = await prisma.$executeRaw`
+    UPDATE "Job" SET input = input || '{"chainedJobId":"pending"}'::jsonb
+    WHERE id = ${jobId}
+      AND (
+        input->>'chainedJobId' IS NULL
+        OR (input->>'chainedJobId' = 'pending' AND "completedAt" < ${staleBefore})
+      )`;
+  if (claimed === 0) return;
+
+  const params = (job.input as { params?: Record<string, unknown> })?.params ?? {};
+  const seconds = Number(params.duration);
+  let chainedJobId: string;
+  try {
+    const voice = await prisma.voice.findUnique({ where: { id: voicePlan.voiceId } });
+    if (!voice || voice.archivedAt) throw new RevoiceError("Voice no longer available", 400);
+    const started = await startRevoice({
+      userId: job.userId,
+      voice,
+      script: voicePlan.script,
+      videoUrl: videoOutput.url,
+      sourceJobId: job.id,
+      sourceSeconds: Number.isFinite(seconds) ? seconds : null,
+    });
+    chainedJobId = started.jobId;
+  } catch (error) {
+    // Make the failure visible in the library rather than swallowing it.
+    const failed = await prisma.job.create({
       data: {
-        input: { ...(job.input as object), chainedJobId } as Prisma.InputJsonValue,
+        userId: job.userId,
+        model: "KLING_LIPSYNC",
+        type: "VIDEO",
+        status: "FAILED",
+        input: {
+          endpoint: "fal-ai/kling-video/lipsync/audio-to-video",
+          params: {},
+          sourceJobId: job.id,
+          voiceId: voicePlan.voiceId,
+          voiceName: voicePlan.voiceName,
+        } as Prisma.InputJsonValue,
+        prompt: voicePlan.script,
+        errorMessage: error instanceof Error ? error.message : "Automatic voice step failed",
+        completedAt: new Date(),
       },
     });
+    chainedJobId = failed.id;
   }
+  // jsonb merge via raw SQL: no-throw if the source job was deleted mid-chain
+  // (the lip-sync job survives on its own either way).
+  await prisma.$executeRaw`
+    UPDATE "Job" SET input = input || ${JSON.stringify({ chainedJobId })}::jsonb
+    WHERE id = ${jobId}`;
 }
 
 /** Marks a job FAILED (idempotent — never downgrades a COMPLETED job). */

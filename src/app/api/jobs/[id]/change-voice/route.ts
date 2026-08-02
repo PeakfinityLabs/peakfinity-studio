@@ -10,6 +10,8 @@ import {
   RevoiceError,
   startRevoice,
 } from "@/lib/voice/revoice";
+import { fal } from "@/lib/fal/client";
+import { getFromR2 } from "@/lib/r2";
 
 export const runtime = "nodejs";
 // TTS + fal re-hosting run inline before the lipsync job is queued.
@@ -107,12 +109,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
+  // R2-persisted outputs have app-relative URLs fal cannot fetch — re-host
+  // the bytes on fal storage first. (Inert while R2 is unconfigured.)
+  let videoUrl = videoAsset.url;
+  if (videoUrl.startsWith("/api/media/") && videoAsset.r2Key) {
+    try {
+      const obj = await getFromR2(videoAsset.r2Key);
+      const bytes = await obj.Body!.transformToByteArray();
+      videoUrl = await fal.storage.upload(
+        new File([bytes as BlobPart], "source.mp4", { type: "video/mp4" })
+      );
+    } catch {
+      return NextResponse.json(
+        { error: "Could not stage the source video for lip-sync — try again." },
+        { status: 502 }
+      );
+    }
+  }
+
   try {
     const { jobId } = await startRevoice({
       userId: me.id,
       voice,
       script,
-      videoUrl: videoAsset.url,
+      videoUrl,
       sourceJobId: source.id,
       sourceSeconds: Number.isFinite(sourceSeconds) ? sourceSeconds : null,
     });

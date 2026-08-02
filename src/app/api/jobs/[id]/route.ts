@@ -3,8 +3,9 @@ import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fal } from "@/lib/fal/client";
 import { falErrorMessage, isFalValidationError } from "@/lib/fal/errors";
-import { completeJob, failJob } from "@/lib/jobs/complete";
+import { completeJob, failJob, maybeRunVoiceChain } from "@/lib/jobs/complete";
 import { parseJobInput } from "@/lib/jobs/types";
+import { parseVoicePlan } from "@/lib/voice/revoice";
 import { deleteFromR2 } from "@/lib/r2";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -92,6 +93,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         await failJob(job.id, "fal no longer reports this request");
         job = (await loadJob(id))!;
       }
+    }
+  }
+
+  // Retry leg for the automatic voice step: if the chain was lost to a crash
+  // or deploy mid-run (stale "pending" claim, or never started), viewing the
+  // job re-attempts it. maybeRunVoiceChain's atomic claim makes this safe to
+  // hit from every poll.
+  if (job.status === "COMPLETED" && parseVoicePlan(job.input)) {
+    const chained = (job.input as { chainedJobId?: unknown }).chainedJobId;
+    if (typeof chained !== "string" || chained === "pending") {
+      await maybeRunVoiceChain(job.id);
+      job = (await loadJob(id))!;
     }
   }
 

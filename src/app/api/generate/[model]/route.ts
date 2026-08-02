@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fal, falWebhookUrl } from "@/lib/fal/client";
-import { isModelSlug, lipsyncCostCents, MODELS } from "@/lib/models/registry";
+import { isModelSlug, MODELS } from "@/lib/models/registry";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { engineAvailable } from "@/lib/voice/providers";
 import { MAX_LIPSYNC_SOURCE_SECONDS } from "@/lib/voice/revoice";
@@ -122,15 +122,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
 
   const endpoint = def.resolveEndpoint(modelParams);
   const falInput = def.toFalInput(modelParams);
-  const estimatedCostCents =
-    def.estimateCostCents(modelParams) +
-    (voicePlan
-      ? lipsyncCostCents(
-          Number.isFinite(Number(modelParams.duration))
-            ? Number(modelParams.duration)
-            : MAX_LIPSYNC_SOURCE_SECONDS
-        )
-      : 0);
+  // The lip-sync fee is NOT added here — the chained KLING_LIPSYNC job carries
+  // it, and both jobs record UsageEvents (adding it twice would double-count).
+  // The studio form still shows the combined figure pre-submit.
+  const estimatedCostCents = def.estimateCostCents(modelParams);
 
   let falRequestId: string;
   try {

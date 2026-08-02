@@ -3,8 +3,10 @@ import { notFound } from "next/navigation";
 import { GenerateForm } from "@/components/studio/generate-form";
 import { ModelGlyph } from "@/components/studio/model-glyph";
 import { isModelSlug, MODELS } from "@/lib/models/registry";
+import { getSessionUser } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { parseJobInput } from "@/lib/jobs/types";
+import { parseVoicePlan, type VoicePlan } from "@/lib/voice/revoice";
 
 export default async function ModelStudioPage({
   params,
@@ -18,12 +20,21 @@ export default async function ModelStudioPage({
   if (!isModelSlug(slug)) notFound();
   const def = MODELS[slug];
 
-  // "Re-run with same settings": seed the form from a previous job.
+  // "Re-run with same settings": seed the form from a previous job. Same
+  // visibility rule as the jobs API — non-admins may only re-run their own.
   let initialParams: Record<string, unknown> | undefined;
+  let initialVoice: VoicePlan | null = null;
   if (rerun) {
+    const me = await getSessionUser();
     const job = await prisma.job.findUnique({ where: { id: rerun } });
-    if (job && job.model === def.genModel) {
+    if (
+      job &&
+      job.model === def.genModel &&
+      me &&
+      (me.role === "ADMIN" || job.userId === me.id)
+    ) {
       initialParams = parseJobInput(job.input).params;
+      initialVoice = parseVoicePlan(job.input);
     }
   }
 
@@ -43,7 +54,7 @@ export default async function ModelStudioPage({
           ← All models
         </Link>
       </div>
-      <GenerateForm slug={slug} initialParams={initialParams} />
+      <GenerateForm slug={slug} initialParams={initialParams} initialVoice={initialVoice} />
     </div>
   );
 }

@@ -242,13 +242,14 @@ const klingO3: ModelDef = {
   schema: klingO3Schema,
   fields: [
     { kind: "select", name: "duration", label: "Duration (s)", options: KLING_DURATIONS },
-    { kind: "switch", name: "generate_audio", label: "Generate audio", help: "+33% cost" },
+    // No generate_audio switch here — the studio form's Audio dropdown drives
+    // it (Default = Kling audio / Silent / a library voice).
   ],
   uploaders: [
     { name: "image_url", label: "Start frame", accept: "image/*", max: 1, single: true, required: true },
     { name: "end_image_url", label: "End frame (optional)", accept: "image/*", max: 1, single: true },
   ],
-  defaults: { duration: "5", generate_audio: false },
+  defaults: { duration: "5", generate_audio: true },
   resolveEndpoint: () => "fal-ai/kling-video/o3/standard/image-to-video",
   toFalInput: stripEmpty,
   estimateCostCents: (params) => {
