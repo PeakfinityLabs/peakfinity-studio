@@ -88,6 +88,18 @@ model User {
   @@index([status, createdAt])
 }
 
+/// Admin-managed API keys / secrets, overriding env vars at runtime so keys
+/// can be rotated from the dashboard without a redeploy. Values are stored
+/// AES-256-GCM encrypted (key derived from AUTH_SECRET, which lives in env —
+/// never in the DB), so a DB-only leak cannot expose them.
+model AppSecret {
+  name          String   @id
+  valueEncrypted String
+  updatedByEmail String
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+}
+
 /// One-time password-reset tokens. A row created via "user" is a reset
 /// REQUEST (surfaced to admins until fulfilled, or emailed directly when an
 /// email service is configured); rows created by an admin carry their email.

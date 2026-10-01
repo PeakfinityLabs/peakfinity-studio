@@ -5,6 +5,7 @@ import { getUsageSummary } from "@/lib/usage";
 import { formatCents } from "@/lib/models/registry";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminUsers } from "@/components/admin/admin-users";
+import { AdminSecrets } from "@/components/admin/admin-secrets";
 
 export const metadata = { title: "Admin — Peakfinity Studio" };
 
@@ -103,6 +104,8 @@ export default async function AdminPage() {
       </div>
 
       <AdminUsers users={rows} />
+
+      <AdminSecrets />
     </div>
   );
 }

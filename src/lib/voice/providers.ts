@@ -1,5 +1,6 @@
 import "server-only";
 import { fal } from "@/lib/fal/client";
+import { getSecret } from "@/lib/secrets";
 import type { VoiceEngine as VoiceEngineName } from "@/generated/prisma/enums";
 
 /**
@@ -76,8 +77,8 @@ const ELEVENLABS_BASE = "https://api.elevenlabs.io";
 // instant-cloned voices ("eleven_multilingual_v2" also works as a fallback).
 const ELEVENLABS_MODEL_ID = "eleven_v3";
 
-function elevenLabsKey(): string {
-  const key = process.env.ELEVENLABS_API_KEY;
+async function elevenLabsKey(): Promise<string> {
+  const key = await getSecret("ELEVENLABS_API_KEY");
   if (!key) {
     throw new Error("ElevenLabs is not configured (ELEVENLABS_API_KEY is missing)");
   }
@@ -97,7 +98,7 @@ async function elevenLabsError(res: Response, fallback: string): Promise<string>
 
 const elevenlabs: VoiceProviderImpl = {
   async clone(sampleAudioUrl, { name, previewText }) {
-    const key = elevenLabsKey();
+    const key = await elevenLabsKey();
 
     // The sample lives on fal storage; fetch it and forward as multipart.
     const sampleRes = await fetch(sampleAudioUrl);
@@ -133,7 +134,7 @@ const elevenlabs: VoiceProviderImpl = {
   },
 
   async speak(text, providerVoiceId) {
-    const key = elevenLabsKey();
+    const key = await elevenLabsKey();
     const res = await fetch(
       `${ELEVENLABS_BASE}/v1/text-to-speech/${providerVoiceId}?output_format=mp3_44100_128`,
       {
@@ -167,7 +168,7 @@ export type ElevenLabsAccountVoice = {
 };
 
 export async function listElevenLabsAccountVoices(): Promise<ElevenLabsAccountVoice[]> {
-  const key = elevenLabsKey();
+  const key = await elevenLabsKey();
   // v2 paginates (max 100/page) and the account already holds >100 voices.
   const voices: ElevenLabsAccountVoice[] = [];
   let pageToken: string | null = null;
@@ -212,7 +213,7 @@ export async function elevenLabsSpeechToSpeech(
   sourceMediaUrl: string,
   providerVoiceId: string
 ): Promise<{ audioUrl: string }> {
-  const key = elevenLabsKey();
+  const key = await elevenLabsKey();
 
   const sourceRes = await fetch(sourceMediaUrl);
   if (!sourceRes.ok) throw new Error("Could not download the source video");
@@ -244,7 +245,7 @@ export async function elevenLabsSpeechToSpeech(
 export async function listElevenLabsRecentUsage(): Promise<Map<string, number>> {
   const lastUsed = new Map<string, number>();
   try {
-    const key = elevenLabsKey();
+    const key = await elevenLabsKey();
     let after: string | null = null;
     for (let page = 0; page < 3; page++) {
       const url = new URL(`${ELEVENLABS_BASE}/v1/history`);
@@ -281,9 +282,9 @@ export function voiceEngine(provider: VoiceEngineName): VoiceProviderImpl {
   return ENGINES[provider];
 }
 
-export function engineAvailable(provider: VoiceEngineName): boolean {
-  if (provider === "ELEVENLABS") return Boolean(process.env.ELEVENLABS_API_KEY);
-  return Boolean(process.env.FAL_KEY);
+export async function engineAvailable(provider: VoiceEngineName): Promise<boolean> {
+  if (provider === "ELEVENLABS") return Boolean(await getSecret("ELEVENLABS_API_KEY"));
+  return Boolean(await getSecret("FAL_KEY"));
 }
 
 /** Days until MiniMax deletes an unused clone (ElevenLabs voices persist). */

@@ -103,7 +103,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
     if (!voice || voice.archivedAt) {
       return NextResponse.json({ error: "Voice not found" }, { status: 404 });
     }
-    if (!engineAvailable(voice.provider)) {
+    if (!(await engineAvailable(voice.provider))) {
       return NextResponse.json(
         { error: `${voice.provider === "ELEVENLABS" ? "ElevenLabs" : "MiniMax"} is not configured.` },
         { status: 503 }

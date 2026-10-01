@@ -29,14 +29,14 @@ const importSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
 });
 
-function guardResponse(caps: { canEditAllFields: boolean }) {
+async function guardResponse(caps: { canEditAllFields: boolean }) {
   if (!caps.canEditAllFields) {
     return NextResponse.json(
       { error: "Only admins and strategists can import voices." },
       { status: 403 }
     );
   }
-  if (!engineAvailable("ELEVENLABS")) {
+  if (!(await engineAvailable("ELEVENLABS"))) {
     return NextResponse.json({ error: "ElevenLabs is not configured." }, { status: 503 });
   }
   return null;
@@ -46,7 +46,7 @@ function guardResponse(caps: { canEditAllFields: boolean }) {
 export async function GET() {
   const me = await apiGuard();
   if (me instanceof NextResponse) return me;
-  const guard = guardResponse(trackerCaps(me));
+  const guard = await guardResponse(trackerCaps(me));
   if (guard) return guard;
 
   try {
@@ -89,7 +89,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const me = await apiGuard();
   if (me instanceof NextResponse) return me;
-  const guard = guardResponse(trackerCaps(me));
+  const guard = await guardResponse(trackerCaps(me));
   if (guard) return guard;
 
   let body: unknown;

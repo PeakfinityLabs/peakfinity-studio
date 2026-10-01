@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db";
+import { getSecret } from "@/lib/secrets";
 
 export const RESET_TOKEN_TTL_MINUTES = 60;
 
@@ -47,7 +48,7 @@ export async function findValidResetToken(raw: string) {
  * sending fails — callers then fall back to the admin-fulfilled flow.
  */
 export async function maybeSendResetEmail(to: string, url: string): Promise<boolean> {
-  const key = process.env.RESEND_API_KEY;
+  const key = await getSecret("RESEND_API_KEY");
   const from = process.env.RESET_EMAIL_FROM;
   if (!key || !from) return false;
   try {

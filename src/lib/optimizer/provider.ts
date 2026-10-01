@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { getSecret } from "@/lib/secrets";
 
 /**
  * LLM provider abstraction for the optimizer. To swap providers, implement
@@ -10,15 +11,15 @@ export type OptimizerProvider = {
   complete: (systemPrompt: string, userPrompt: string) => Promise<string>;
 };
 
-const globalForAnthropic = globalThis as unknown as { anthropic?: Anthropic };
-
 const anthropicProvider: OptimizerProvider = {
   async complete(systemPrompt, userPrompt) {
-    if (!process.env.ANTHROPIC_API_KEY) {
+    const apiKey = await getSecret("ANTHROPIC_API_KEY");
+    if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY is not configured");
     }
-    globalForAnthropic.anthropic ??= new Anthropic();
-    const response = await globalForAnthropic.anthropic.messages.create({
+    // Built per call with the resolved key so a dashboard rotation takes effect.
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
       model: "claude-sonnet-5",
       max_tokens: 1024,
       system: systemPrompt,

@@ -54,8 +54,8 @@ export async function GET(req: Request) {
     canManage: caps.canEditAllFields,
     archivedCount,
     engines: {
-      MINIMAX: engineAvailable("MINIMAX"),
-      ELEVENLABS: engineAvailable("ELEVENLABS"),
+      MINIMAX: await engineAvailable("MINIMAX"),
+      ELEVENLABS: await engineAvailable("ELEVENLABS"),
     },
   });
 }
@@ -87,7 +87,7 @@ export async function POST(req: Request) {
   }
   const { name, provider, sampleUrl } = parsed.data;
 
-  if (!engineAvailable(provider)) {
+  if (!(await engineAvailable(provider))) {
     return NextResponse.json(
       { error: `${provider === "ELEVENLABS" ? "ElevenLabs" : "MiniMax"} is not configured.` },
       { status: 503 }
