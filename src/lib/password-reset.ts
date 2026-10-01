@@ -43,14 +43,16 @@ export async function findValidResetToken(raw: string) {
 }
 
 /**
- * Sends the reset link by email when an email service is configured
- * (RESEND_API_KEY + RESET_EMAIL_FROM). Returns false when not configured or
- * sending fails — callers then fall back to the admin-fulfilled flow.
+ * Sends the reset link by email when a Resend key is configured (via the Admin
+ * API-keys panel or env). The from-address defaults to the verified
+ * peakfinitylabs.com domain, overridable with RESET_EMAIL_FROM. Returns false
+ * when no key is set or sending fails — callers then fall back to the
+ * admin-fulfilled flow.
  */
 export async function maybeSendResetEmail(to: string, url: string): Promise<boolean> {
   const key = await getSecret("RESEND_API_KEY");
-  const from = process.env.RESET_EMAIL_FROM;
-  if (!key || !from) return false;
+  if (!key) return false;
+  const from = process.env.RESET_EMAIL_FROM ?? "Peakfinity Studio <studio@peakfinitylabs.com>";
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
