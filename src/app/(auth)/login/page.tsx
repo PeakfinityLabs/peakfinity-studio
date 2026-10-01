@@ -26,6 +26,7 @@ export default async function LoginPage({
         { name: "password", label: "Password", type: "password", autoComplete: "current-password" },
       ]}
       submitLabel="Sign in"
+      secondaryLink={{ text: "Forgot password?", href: "/forgot" }}
       footer={{ text: "No account?", linkText: "Register", href: "/register" }}
     />
   );

@@ -83,8 +83,29 @@ model User {
   usageEvents     UsageEvent[]
   creatives       Creative[]   @relation("CreativeEditor")
   strategistOn    Creative[]   @relation("CreativeStrategist")
+  resetTokens     PasswordResetToken[]
 
   @@index([status, createdAt])
+}
+
+/// One-time password-reset tokens. A row created via "user" is a reset
+/// REQUEST (surfaced to admins until fulfilled, or emailed directly when an
+/// email service is configured); rows created by an admin carry their email.
+/// Only the sha256 of the URL token is stored — never the raw value.
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  /// "user" for self-serve requests, else the minting admin's email.
+  createdVia String
+  /// True when the reset link was emailed to the user directly.
+  emailed    Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }
 
 /// One row of the creative tracker (previously a row in the team's Google Sheet).

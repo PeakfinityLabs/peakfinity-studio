@@ -11,7 +11,7 @@ export const metadata = { title: "Admin — Peakfinity Studio" };
 export default async function AdminPage() {
   const me = (await getSessionUser())!;
 
-  const [users, counts, usage] = await Promise.all([
+  const [users, counts, usage, resetRequests] = await Promise.all([
     prisma.user.findMany({
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
       select: {
@@ -27,7 +27,20 @@ export default async function AdminPage() {
     }),
     prisma.user.groupBy({ by: ["status"], _count: true }),
     getUsageSummary(null),
+    // Open self-serve reset requests needing an admin (not emailed directly).
+    prisma.passwordResetToken.findMany({
+      where: {
+        createdVia: "user",
+        emailed: false,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: { userId: true, createdAt: true },
+    }),
   ]);
+  const resetRequestByUser = new Map(
+    resetRequests.map((r) => [r.userId, r.createdAt.toISOString()])
+  );
 
   const countByStatus = Object.fromEntries(counts.map((c) => [c.status, c._count]));
   const adminCount = users.filter((u) => u.role === "ADMIN").length;
@@ -52,6 +65,7 @@ export default async function AdminPage() {
     reviewedByEmail: u.reviewedByEmail,
     isSelf: u.id === me.id,
     lockedAdmin: isAdminEmail(u.email),
+    resetRequestedAt: resetRequestByUser.get(u.id) ?? null,
   }));
 
   return (

@@ -35,6 +35,8 @@ export type AdminUserRow = {
   reviewedByEmail: string | null;
   isSelf: boolean;
   lockedAdmin: boolean;
+  /** Set when the user asked for a password reset that no admin has handled. */
+  resetRequestedAt: string | null;
 };
 
 function statusVariant(status: AdminUserRow["status"]) {
@@ -81,10 +83,68 @@ export function AdminUsers({ users }: { users: AdminUserRow[] }) {
     }
   };
 
+  // Mint a one-time reset link and put it straight on the clipboard — the
+  // admin just pastes it to the user in Slack/Discord.
+  const resetLink = async (id: string) => {
+    setBusyId(id);
+    try {
+      const data = await fetchJson<{ url: string; email: string; ttlMinutes: number }>(
+        `/api/admin/users/${id}/reset-link`,
+        { method: "POST" }
+      );
+      await navigator.clipboard.writeText(data.url);
+      toast.success(
+        `Reset link for ${data.email} copied to clipboard — valid ${data.ttlMinutes} minutes, one use.`,
+        { duration: 10000 }
+      );
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not create reset link");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const pending = users.filter((u) => u.status === "PENDING");
+  const resetRequests = users.filter((u) => u.resetRequestedAt);
 
   return (
     <div className="space-y-6">
+      {resetRequests.length > 0 && (
+        <Card className="border-amber-500/40">
+          <CardHeader>
+            <CardTitle className="text-display text-lg">
+              Password reset requests
+              <span className="ml-2 font-mono text-sm text-muted-foreground">
+                {resetRequests.length}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-border/60">
+              {resetRequests.map((u) => (
+                <li key={u.id} className="flex flex-wrap items-center gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{u.name}</p>
+                    <p className="truncate font-mono text-xs text-muted-foreground">{u.email}</p>
+                  </div>
+                  <span className="ml-auto font-mono text-xs text-muted-foreground">
+                    requested {new Date(u.resetRequestedAt!).toLocaleString()}
+                  </span>
+                  <Button size="sm" disabled={busyId === u.id} onClick={() => void resetLink(u.id)}>
+                    Copy reset link
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Send the copied link to the user yourself (Slack, text, email). Links are one-time
+              and expire after an hour; creating one clears the request.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-display text-lg">
@@ -199,16 +259,44 @@ export function AdminUsers({ users }: { users: AdminUserRow[] }) {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={statusVariant(u.status)}>{u.status.toLowerCase()}</Badge>
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant={statusVariant(u.status)}>{u.status.toLowerCase()}</Badge>
+                        {u.resetRequestedAt && (
+                          <Badge
+                            variant="outline"
+                            className="border-amber-500/50 text-amber-400"
+                            title="Asked for a password reset"
+                          >
+                            reset?
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {new Date(u.createdAt).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="text-right">
                       {u.isSelf ? (
-                        <span className="text-xs text-muted-foreground">—</span>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          disabled={busyId === u.id}
+                          title="Create a one-time password-reset link for your own account"
+                          onClick={() => void resetLink(u.id)}
+                        >
+                          Reset link
+                        </Button>
                       ) : (
                         <div className="flex flex-wrap justify-end gap-1.5">
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={busyId === u.id}
+                            title="Create a one-time password-reset link (copied to clipboard)"
+                            onClick={() => void resetLink(u.id)}
+                          >
+                            Reset link
+                          </Button>
                           {u.status !== "APPROVED" && (
                             <Button
                               size="xs"

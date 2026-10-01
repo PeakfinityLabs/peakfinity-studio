@@ -23,7 +23,10 @@ export function AuthForm({
   fields,
   submitLabel,
   footer,
+  secondaryLink,
   callbackUrl,
+  hidden,
+  hideSubmit,
 }: {
   title: string;
   description?: string;
@@ -31,7 +34,10 @@ export function AuthForm({
   fields: Field[];
   submitLabel: string;
   footer: { text: string; linkText: string; href: string };
+  secondaryLink?: { text: string; href: string };
   callbackUrl?: string;
+  hidden?: Record<string, string>;
+  hideSubmit?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
 
@@ -44,6 +50,9 @@ export function AuthForm({
       <CardContent>
         <form action={formAction} className="space-y-4">
           {callbackUrl ? <input type="hidden" name="callbackUrl" value={callbackUrl} /> : null}
+          {Object.entries(hidden ?? {}).map(([name, value]) => (
+            <input key={name} type="hidden" name={name} value={value} />
+          ))}
           {fields.map((field) => (
             <div key={field.name} className="space-y-2">
               <Label htmlFor={field.name}>{field.label}</Label>
@@ -58,10 +67,23 @@ export function AuthForm({
             </div>
           ))}
           {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-          <Button type="submit" className="w-full" disabled={pending}>
-            {pending ? "Please wait…" : submitLabel}
-          </Button>
+          {state.message ? <p className="text-sm text-emerald-400">{state.message}</p> : null}
+          {!hideSubmit && (
+            <Button type="submit" className="w-full" disabled={pending}>
+              {pending ? "Please wait…" : submitLabel}
+            </Button>
+          )}
         </form>
+        {secondaryLink ? (
+          <p className="mt-4 text-center text-sm">
+            <Link
+              href={secondaryLink.href}
+              className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              {secondaryLink.text}
+            </Link>
+          </p>
+        ) : null}
         <p className="mt-4 text-center text-sm text-muted-foreground">
           {footer.text}{" "}
           <Link href={footer.href} className="font-medium text-foreground underline-offset-4 hover:underline">
