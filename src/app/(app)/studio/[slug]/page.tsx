@@ -5,6 +5,7 @@ import { ModelGlyph } from "@/components/studio/model-glyph";
 import { isModelSlug, MODELS } from "@/lib/models/registry";
 import { getSessionUser } from "@/lib/authz";
 import { prisma } from "@/lib/db";
+import { canViewJob } from "@/lib/job-visibility";
 import { parseJobInput } from "@/lib/jobs/types";
 import { parseVoicePlan, type VoicePlan } from "@/lib/voice/revoice";
 
@@ -26,12 +27,15 @@ export default async function ModelStudioPage({
   let initialVoice: VoicePlan | null = null;
   if (rerun) {
     const me = await getSessionUser();
-    const job = await prisma.job.findUnique({ where: { id: rerun } });
+    const job = await prisma.job.findUnique({
+      where: { id: rerun },
+      include: { user: { select: { email: true } } },
+    });
     if (
       job &&
       job.model === def.genModel &&
       me &&
-      (me.role === "ADMIN" || job.userId === me.id)
+      canViewJob(me, { userId: job.userId, ownerEmail: job.user.email })
     ) {
       initialParams = parseJobInput(job.input).params;
       initialVoice = parseVoicePlan(job.input);

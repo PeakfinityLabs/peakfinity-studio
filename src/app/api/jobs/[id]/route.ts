@@ -3,6 +3,7 @@ import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fal } from "@/lib/fal/client";
 import { falErrorMessage, isFalValidationError } from "@/lib/fal/errors";
+import { canViewJob } from "@/lib/job-visibility";
 import { completeJob, failJob, maybeRunVoiceChain } from "@/lib/jobs/complete";
 import { parseJobInput } from "@/lib/jobs/types";
 import { parseVoicePlan } from "@/lib/voice/revoice";
@@ -18,7 +19,9 @@ async function loadJob(id: string) {
     where: { id },
     include: {
       assets: true,
-      user: { select: { id: true, name: true } },
+      // email is needed for the private-library check — it is NOT returned to
+      // the client (see the response shape below).
+      user: { select: { id: true, name: true, email: true } },
     },
   });
 }
@@ -32,9 +35,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!job) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
-  // Non-admins may only view their own jobs (404, not 403, to avoid leaking
-  // that a job with this id exists).
-  if (gate.role !== "ADMIN" && job.userId !== gate.id) {
+  // Non-admins may only view their own jobs, and a private-library account's
+  // jobs are invisible to everyone else including other admins (404, not 403,
+  // to avoid leaking that a job with this id exists).
+  if (!canViewJob(gate, { userId: job.userId, ownerEmail: job.user.email })) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
@@ -123,7 +127,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       input: job.input,
       createdAt: job.createdAt,
       completedAt: job.completedAt,
-      user: job.user,
+      // Deliberately id + name only — the owner's email stays server-side.
+      user: { id: job.user.id, name: job.user.name },
       queuePosition,
       assets: job.assets.map((a) => ({
         id: a.id,
@@ -146,13 +151,18 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const job = await prisma.job.findUnique({
     where: { id },
-    include: { assets: { select: { r2Key: true } } },
+    include: {
+      assets: { select: { r2Key: true } },
+      user: { select: { email: true } },
+    },
   });
   if (!job) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
-  if (job.userId !== me.id && me.role !== "ADMIN") {
-    return NextResponse.json({ error: "You can only delete your own generations" }, { status: 403 });
+  // A job you cannot see, you cannot delete — 404 so a private-library job's
+  // existence isn't confirmed by a 403.
+  if (!canViewJob(me, { userId: job.userId, ownerEmail: job.user.email })) {
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
   // Best-effort: drop persisted media from R2 (no-op when R2 isn't configured

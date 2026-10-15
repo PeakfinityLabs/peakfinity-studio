@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fal } from "@/lib/fal/client";
+import { canViewJob } from "@/lib/job-visibility";
 import { parseJobInput } from "@/lib/jobs/types";
 
 export const runtime = "nodejs";
@@ -11,12 +12,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (me instanceof NextResponse) return me;
 
   const { id } = await params;
-  const job = await prisma.job.findUnique({ where: { id } });
+  const job = await prisma.job.findUnique({
+    where: { id },
+    include: { user: { select: { email: true } } },
+  });
   if (!job) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
-  if (job.userId !== me.id && me.role !== "ADMIN") {
-    return NextResponse.json({ error: "You can only cancel your own jobs" }, { status: 403 });
+  // Same visibility rule as GET: own jobs always, others only if the owner is
+  // not a private-library account.
+  if (!canViewJob(me, { userId: job.userId, ownerEmail: job.user.email })) {
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
   if (job.status !== "IN_QUEUE" && job.status !== "IN_PROGRESS") {
     return NextResponse.json({ error: `Job is already ${job.status}` }, { status: 409 });

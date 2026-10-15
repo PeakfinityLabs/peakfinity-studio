@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
+import { visibleJobsWhere } from "@/lib/job-visibility";
 import { GenModel, JobStatus, JobType } from "@/generated/prisma/client";
 
 export const runtime = "nodejs";
@@ -28,12 +29,14 @@ export async function GET(req: Request) {
   const { mine, model, type, status, cursor, take, sinceDays } = parsed.data;
 
   // Only admins can see the whole team's work. Everyone else is scoped to their
-  // own generations regardless of the `mine` param.
+  // own generations regardless of the `mine` param. visibleJobsWhere() further
+  // removes private-library accounts' jobs from every other user's view —
+  // including other admins (see lib/job-visibility.ts).
   const scopeToOwn = me.role !== "ADMIN" || mine === "1";
 
   const jobs = await prisma.job.findMany({
     where: {
-      ...(scopeToOwn ? { userId: me.id } : {}),
+      ...(scopeToOwn ? { userId: me.id } : visibleJobsWhere(me)),
       ...(model ? { model } : {}),
       ...(type ? { type } : {}),
       ...(status ? { status } : {}),

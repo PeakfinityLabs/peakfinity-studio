@@ -27,7 +27,9 @@ export default async function AdminPage() {
       },
     }),
     prisma.user.groupBy({ by: ["status"], _count: true }),
-    getUsageSummary(null),
+    // Only the aggregate totals are read here, so the per-editor withholding
+    // in getUsageSummary doesn't change these numbers.
+    getUsageSummary(null, me),
     // Open self-serve reset requests needing an admin (not emailed directly).
     prisma.passwordResetToken.findMany({
       where: {

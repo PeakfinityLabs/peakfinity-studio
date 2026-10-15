@@ -19,6 +19,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Invalid query" }, { status: 400 });
   }
 
-  const summary = await getUsageSummary(parsed.data.days ?? 30);
+  const summary = await getUsageSummary(parsed.data.days ?? 30, gate);
   return NextResponse.json(summary);
 }

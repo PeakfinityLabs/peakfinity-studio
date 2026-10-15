@@ -37,7 +37,7 @@ export default async function UsagePage({
 
   const { period = "30" } = await searchParams;
   const days = period === "all" ? null : Number(period) || 30;
-  const summary = await getUsageSummary(days);
+  const summary = await getUsageSummary(days, me);
 
   return (
     <div className="space-y-6">
@@ -148,6 +148,13 @@ export default async function UsagePage({
       <p className="text-xs text-muted-foreground">
         Costs are estimates from the model registry&apos;s rates at generation time — reconcile
         against the fal dashboard for billing-grade numbers.
+        {summary.hasWithheldUsers && (
+          <>
+            {" "}
+            One or more accounts keep a private library, so they are counted in the totals above but
+            not listed by editor.
+          </>
+        )}
       </p>
     </div>
   );

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiGuard } from "@/lib/authz";
+import { prisma } from "@/lib/db";
+import { canViewJob } from "@/lib/job-visibility";
 import { getFromR2, r2Configured } from "@/lib/r2";
 
 export const runtime = "nodejs";
@@ -17,6 +19,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
   const key = segments.join("/");
   if (!ALLOWED_KEY_PREFIXES.some((p) => key.startsWith(p)) || key.includes("..")) {
     return NextResponse.json({ error: "Invalid media key" }, { status: 400 });
+  }
+
+  // Authorize the KEY, not just the session: being signed in is not permission
+  // to stream someone else's media. The Asset row ties the key to its job,
+  // whose visibility rule (own jobs; admins; minus private-library accounts)
+  // decides. Job ids are cuids, but guessing is not the only risk — a key can
+  // leak through a shared link or a browser history.
+  const asset = await prisma.asset.findFirst({
+    where: { r2Key: key },
+    select: { job: { select: { userId: true, user: { select: { email: true } } } } },
+  });
+  if (!asset || !canViewJob(gate, { userId: asset.job.userId, ownerEmail: asset.job.user.email })) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const range = req.headers.get("range") ?? undefined;

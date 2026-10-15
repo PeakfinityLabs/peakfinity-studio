@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
+import { canViewJob } from "@/lib/job-visibility";
 import { isMediaExpired } from "@/lib/media";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { engineAvailable } from "@/lib/voice/providers";
@@ -52,9 +53,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const { id } = await params;
-  const source = await prisma.job.findUnique({ where: { id }, include: { assets: true } });
-  // Same visibility rule as GET: non-admins only see their own jobs.
-  if (!source || (me.role !== "ADMIN" && source.userId !== me.id)) {
+  const source = await prisma.job.findUnique({
+    where: { id },
+    include: { assets: true, user: { select: { email: true } } },
+  });
+  // Same visibility rule as GET: non-admins only see their own jobs, and a
+  // private-library account's jobs are hidden from everyone else.
+  if (!source || !canViewJob(me, { userId: source.userId, ownerEmail: source.user.email })) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
   if (source.type !== "VIDEO" || source.status !== "COMPLETED") {

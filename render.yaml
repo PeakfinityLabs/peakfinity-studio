@@ -27,6 +27,11 @@ services:
         sync: false
       - key: ADMIN_EMAILS
         value: team@peakfinitylabs.com,rahul@peakfinitylabs.com,jonahberry88@gmail.com
+      # Private libraries: these accounts' generations are visible only to
+      # themselves — hidden from every other user including other admins.
+      # lib/job-visibility.ts defaults to this same value if the var is unset.
+      - key: PRIVATE_LIBRARY_EMAILS
+        value: team@peakfinitylabs.com
       - key: FAL_KEY
         sync: false
       - key: ANTHROPIC_API_KEY

@@ -1,4 +1,5 @@
 import { getSessionUser } from "@/lib/authz";
+import { hasPrivateLibrary } from "@/lib/job-visibility";
 import { LibraryView } from "@/components/library/library-view";
 
 export const metadata = { title: "Library — Peakfinity Studio" };
@@ -6,6 +7,7 @@ export const metadata = { title: "Library — Peakfinity Studio" };
 export default async function LibraryPage() {
   const me = (await getSessionUser())!;
   const isAdmin = me.role === "ADMIN";
+  const isPrivate = hasPrivateLibrary(me);
 
   return (
     <div className="space-y-6">
@@ -19,6 +21,12 @@ export default async function LibraryPage() {
             ? "Filter by model, type, date or editor — re-run, download or delete any generation."
             : "Everything you've generated — re-run, download or delete."}
         </p>
+        {isPrivate && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Your own generations are private to this account — no other user, including other
+            admins, can see or open them.
+          </p>
+        )}
       </div>
       <LibraryView isAdmin={isAdmin} currentUserId={me.id} />
     </div>
