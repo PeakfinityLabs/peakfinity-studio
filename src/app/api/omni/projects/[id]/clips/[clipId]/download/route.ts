@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fileSlug } from "@/lib/omni";
-import { fetchClipBytes, findOwnProject } from "@/lib/omni-server";
+import { readFile } from "node:fs/promises";
+import { fetchClipBytes, findOwnProject, stitchClips } from "@/lib/omni-server";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 /**
  * Downloads one timeline clip as an attachment. Proxied (rather than linking
@@ -24,21 +26,31 @@ export async function GET(
   const clips = await prisma.omniClip.findMany({
     where: { projectId: id },
     orderBy: { position: "asc" },
-    select: { id: true, url: true },
+    select: { id: true, url: true, trimStart: true, trimEnd: true },
   });
   const index = clips.findIndex((c) => c.id === clipId);
   if (index === -1) return NextResponse.json({ error: "Clip not found" }, { status: 404 });
 
+  const clip = clips[index];
+  const name = `${fileSlug(project.name)}-clip-${index + 1}.mp4`;
+  const headers = (contentType: string, length: number) => ({
+    "content-type": contentType.startsWith("video/") ? contentType : "video/mp4",
+    "content-disposition": `attachment; filename="${name}"`,
+    "content-length": String(length),
+  });
   try {
-    const { bytes, contentType } = await fetchClipBytes(clips[index].url);
-    const name = `${fileSlug(project.name)}-clip-${index + 1}.mp4`;
-    return new Response(Buffer.from(bytes), {
-      headers: {
-        "content-type": contentType.startsWith("video/") ? contentType : "video/mp4",
-        "content-disposition": `attachment; filename="${name}"`,
-        "content-length": String(bytes.byteLength),
-      },
-    });
+    // Untrimmed clips download as the original file; trimmed/cut ones are rendered.
+    if (clip.trimStart === 0 && clip.trimEnd === null) {
+      const { bytes, contentType } = await fetchClipBytes(clip.url);
+      return new Response(Buffer.from(bytes), { headers: headers(contentType, bytes.byteLength) });
+    }
+    const result = await stitchClips([clip], project.aspectRatio);
+    try {
+      const bytes = await readFile(result.file);
+      return new Response(bytes, { headers: headers("video/mp4", bytes.byteLength) });
+    } finally {
+      await result.cleanup();
+    }
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Download failed" },

@@ -8,7 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import { isAllowedClipUrl } from "../src/lib/omni";
-import { stitchClips } from "../src/lib/omni-server";
+import { resolveTrim, stitchClips } from "../src/lib/omni-server";
 
 const run = promisify(execFile);
 
@@ -22,6 +22,11 @@ async function main() {
   assert(!isAllowedClipUrl("https://fal.media.evil.com/x.mp4"));
   assert(!isAllowedClipUrl("http://169.254.169.254/latest/meta-data"));
   assert(!isAllowedClipUrl("/api/media/outputs/../inputs/x"));
+
+  // Trim clamping
+  assert.deepEqual(resolveTrim({ trimStart: 0, trimEnd: null }, 5), { start: 0, end: 5 });
+  assert.deepEqual(resolveTrim({ trimStart: 1, trimEnd: 9 }, 5), { start: 1, end: 5 });
+  assert.deepEqual(resolveTrim({ trimStart: 7, trimEnd: null }, 5), { start: 4.9, end: 5 });
 
   // Two clips that differ in everything stitching has to normalise:
   // 16:9 with audio, then 9:16 with no audio track at all.
@@ -67,28 +72,50 @@ async function main() {
     return file ? new Response(await readFile(file)) : new Response("", { status: 404 });
   }) as typeof fetch;
 
-  const { file, cleanup } = await stitchClips(Object.keys(files), "9:16");
-  const info: string = await run(ffmpegPath!, ["-hide_banner", "-i", file]).then(
-    (r) => r.stderr,
-    (e: { stderr: string }) => e.stderr
-  );
-  await cleanup();
+  const full = (url: string) => ({ url, trimStart: 0, trimEnd: null });
+  const [urlA, urlB] = Object.keys(files);
+  const render = async (segs: Parameters<typeof stitchClips>[0]) => {
+    const { file, cleanup } = await stitchClips(segs, "9:16");
+    const out: string = await run(ffmpegPath!, ["-hide_banner", "-i", file]).then(
+      (r) => r.stderr,
+      (e: { stderr: string }) => e.stderr
+    );
+    await cleanup();
+    const m = out.match(/Duration: (\d+):(\d+):(\d+\.\d+)/)!;
+    return { info: out, seconds: Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) };
+  };
 
-  const d = info.match(/Duration: (\d+):(\d+):(\d+\.\d+)/)!;
-  const seconds = Number(d[1]) * 3600 + Number(d[2]) * 60 + Number(d[3]);
+  const { info, seconds } = await render([full(urlA), full(urlB)]);
   assert(Math.abs(seconds - 5) < 0.3, `expected ~5s, got ${seconds}`);
+
+  // Trims: 0.5–1.5 of A (1s) + 1–end of B (2s) = 3s.
+  const trimmed = await render([
+    { url: urlA, trimStart: 0.5, trimEnd: 1.5 },
+    { url: urlB, trimStart: 1, trimEnd: null },
+  ]);
+  assert(Math.abs(trimmed.seconds - 3) < 0.3, `trim: expected ~3s, got ${trimmed.seconds}`);
+
+  // Cut: B split, second half moved first, middle dropped = 2s (B 2–3, then B 0–1).
+  const cut = await render([
+    { url: urlB, trimStart: 2, trimEnd: null },
+    { url: urlB, trimStart: 0, trimEnd: 1 },
+  ]);
+  assert(Math.abs(cut.seconds - 2) < 0.3, `cut: expected ~2s, got ${cut.seconds}`);
+  assert(/Audio: aac/.test(cut.info), "silent source still gets an audio track");
   assert(/Video: h264.*720x1280/.test(info), "output must be 720x1280 h264");
   assert(/Audio: aac/.test(info), "output must carry an audio track");
 
   // An expired clip surfaces a readable error instead of a crash.
   await assert.rejects(
-    stitchClips(["https://v3.fal.media/files/check/gone.mp4"], "16:9"),
+    stitchClips([full("https://v3.fal.media/files/check/gone.mp4")], "16:9"),
     /expired/
   );
-  await assert.rejects(stitchClips(["https://example.com/x.mp4"], "16:9"), /not allowed/);
+  await assert.rejects(stitchClips([full("https://example.com/x.mp4")], "16:9"), /not allowed/);
 
   await rm(dir, { recursive: true, force: true });
-  console.log(`✔ omni checks passed (stitched ${seconds.toFixed(2)}s, 720x1280, h264+aac)`);
+  console.log(
+    `✔ omni checks passed (full ${seconds.toFixed(2)}s, trimmed ${trimmed.seconds.toFixed(2)}s, cut ${cut.seconds.toFixed(2)}s; 720x1280 h264+aac)`
+  );
 }
 
 void main().catch((e) => {

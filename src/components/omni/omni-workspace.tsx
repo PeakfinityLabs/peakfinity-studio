@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ReferenceUploader } from "@/components/studio/reference-uploader";
 import { useAvatars } from "@/components/omni/avatar-library";
+import { ClipEditor } from "@/components/omni/clip-editor";
 import { fetchJson } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import {
@@ -31,7 +32,14 @@ import {
   type OmniMode,
 } from "@/lib/omni";
 
-type Clip = { id: string; label: string; url: string; sourceJobId: string | null };
+type Clip = {
+  id: string;
+  label: string;
+  url: string;
+  sourceJobId: string | null;
+  trimStart: number;
+  trimEnd: number | null;
+};
 type Generation = {
   id: string;
   status: string;
@@ -74,6 +82,9 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
   const [exporting, setExporting] = useState(false);
   const [playingAll, setPlayingAll] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -163,13 +174,64 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
     }
   };
 
+  const commitOrder = (order: string[]) => {
+    if (order.join() === clips.map((c) => c.id).join()) return;
+    setProject({ ...project, clips: order.map((id) => clips.find((c) => c.id === id)!) });
+    void api("/clips", { method: "PUT", body: JSON.stringify({ order }) });
+  };
+
   const move = (index: number, delta: number) => {
     const order = clips.map((c) => c.id);
     const target = index + delta;
     if (target < 0 || target >= order.length) return;
     [order[index], order[target]] = [order[target], order[index]];
-    setProject({ ...project, clips: order.map((id) => clips.find((c) => c.id === id)!) });
-    void api("/clips", { method: "PUT", body: JSON.stringify({ order }) });
+    commitOrder(order);
+  };
+
+  /** Drop the dragged clip so it lands before position `before` (0..clips.length). */
+  const dropAt = (before: number) => {
+    if (!dragId) return;
+    const order = clips.map((c) => c.id).filter((id) => id !== dragId);
+    const from = clips.findIndex((c) => c.id === dragId);
+    order.splice(before > from ? before - 1 : before, 0, dragId);
+    commitOrder(order);
+  };
+
+  const trimClip = (clipId: string, trimStart: number, trimEnd: number | null) => {
+    setProject({
+      ...project,
+      clips: clips.map((c) => (c.id === clipId ? { ...c, trimStart, trimEnd } : c)),
+    });
+    void api(`/clips/${clipId}`, { method: "PATCH", body: JSON.stringify({ trimStart, trimEnd }) });
+  };
+
+  const cutClip = (clipId: string, at: number) =>
+    void api(
+      `/clips/${clipId}`,
+      { method: "POST", body: JSON.stringify({ at }) },
+      "Clip cut in two"
+    );
+
+  const deleteGeneration = async (g: Generation) => {
+    const used = clips.filter((c) => c.sourceJobId === g.id).length;
+    if (
+      !window.confirm(
+        `Delete this generation? This can't be undone.${used ? ` It will also be removed from ${used} timeline clip${used === 1 ? "" : "s"}.` : ""}`
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      await fetchJson(`/api/jobs/${g.id}`, { method: "DELETE" });
+      toast.success("Generation deleted");
+      if (editingId && clips.some((c) => c.id === editingId && c.sourceJobId === g.id))
+        setEditingId(null);
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Delete failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const exportVideo = async () => {
@@ -311,6 +373,16 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                     autoPlay
                     controls
                     playsInline
+                    onLoadedMetadata={(e) => {
+                      e.currentTarget.currentTime = clips[playingAll].trimStart;
+                    }}
+                    onTimeUpdate={(e) => {
+                      const end = clips[playingAll].trimEnd;
+                      if (end !== null && e.currentTarget.currentTime >= end) {
+                        e.currentTarget.pause();
+                        setPlayingAll((i) => (i !== null && i + 1 < clips.length ? i + 1 : null));
+                      }
+                    }}
                     onEnded={() =>
                       setPlayingAll((i) => (i !== null && i + 1 < clips.length ? i + 1 : null))
                     }
@@ -344,13 +416,53 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                   Insert finished generations or upload clips to build the video.
                 </div>
               ) : (
-                <ol className="flex gap-3 overflow-x-auto pb-2">
+                <ol
+                  className="flex gap-3 overflow-x-auto pb-2"
+                  onDragOver={(e) => dragId && e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dropIndex !== null) dropAt(dropIndex);
+                    setDragId(null);
+                    setDropIndex(null);
+                  }}
+                >
                   {clips.map((clip, i) => (
                     <li
                       key={clip.id}
-                      className={cn("shrink-0 space-y-1.5", portrait ? "w-28" : "w-44")}
+                      draggable={!busy}
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", clip.id);
+                        setDragId(clip.id);
+                      }}
+                      onDragEnd={() => {
+                        setDragId(null);
+                        setDropIndex(null);
+                      }}
+                      onDragOver={(e) => {
+                        if (!dragId) return;
+                        e.preventDefault();
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setDropIndex(e.clientX < r.left + r.width / 2 ? i : i + 1);
+                      }}
+                      className={cn(
+                        "relative shrink-0 cursor-grab space-y-1.5 active:cursor-grabbing",
+                        portrait ? "w-28" : "w-44",
+                        dragId === clip.id && "opacity-40"
+                      )}
                     >
-                      <div className="relative overflow-hidden rounded-md border bg-muted">
+                      {dragId && dropIndex === i && (
+                        <span className="absolute inset-y-0 -left-2 w-0.5 rounded bg-foreground" />
+                      )}
+                      {dragId && dropIndex === i + 1 && i === clips.length - 1 && (
+                        <span className="absolute inset-y-0 -right-2 w-0.5 rounded bg-foreground" />
+                      )}
+                      <div
+                        className={cn(
+                          "relative overflow-hidden rounded-md border bg-muted",
+                          editingId === clip.id && "ring-2 ring-foreground"
+                        )}
+                      >
                         {/* #t=0.1 makes browsers paint a first frame as the thumbnail */}
                         <video
                           src={`${clip.url}#t=0.1`}
@@ -365,6 +477,12 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                         <span className="absolute top-1 left-1 rounded bg-background/85 px-1.5 font-mono text-[10px]">
                           {i + 1}
                         </span>
+                        {(clip.trimStart > 0 || clip.trimEnd !== null) && (
+                          <span className="absolute right-1 bottom-1 rounded bg-background/85 px-1.5 font-mono text-[10px]">
+                            ✂ {clip.trimStart.toFixed(1)}–
+                            {clip.trimEnd === null ? "end" : clip.trimEnd.toFixed(1)}s
+                          </span>
+                        )}
                       </div>
                       <p className="truncate text-xs" title={clip.label}>
                         {clip.label}
@@ -388,6 +506,14 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                         >
                           →
                         </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="font-medium underline-offset-4 hover:underline disabled:opacity-50"
+                          onClick={() => setEditingId(editingId === clip.id ? null : clip.id)}
+                        >
+                          {editingId === clip.id ? "Close" : "Trim / Cut"}
+                        </button>
                         <a
                           href={`/api/omni/projects/${projectId}/clips/${clip.id}/download`}
                           className="underline-offset-4 hover:underline"
@@ -398,13 +524,14 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                           type="button"
                           disabled={busy}
                           className="text-destructive underline-offset-4 hover:underline disabled:opacity-50"
-                          onClick={() =>
+                          onClick={() => {
+                            if (editingId === clip.id) setEditingId(null);
                             void api(
                               `/clips/${clip.id}`,
                               { method: "DELETE" },
                               "Removed from timeline"
-                            )
-                          }
+                            );
+                          }}
                         >
                           Remove
                         </button>
@@ -412,6 +539,26 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                     </li>
                   ))}
                 </ol>
+              )}
+
+              {(() => {
+                const i = clips.findIndex((c) => c.id === editingId);
+                if (i === -1) return null;
+                return (
+                  <ClipEditor
+                    key={clips[i].id}
+                    clip={clips[i]}
+                    index={i}
+                    portrait={portrait}
+                    busy={busy}
+                    onTrim={(a, b) => trimClip(clips[i].id, a, b)}
+                    onCut={(at) => cutClip(clips[i].id, at)}
+                    onClose={() => setEditingId(null)}
+                  />
+                );
+              })()}
+              {clips.length > 1 && (
+                <p className="text-xs text-muted-foreground">Drag clips to reorder (or use ← →).</p>
               )}
 
               <div className="flex flex-wrap items-center gap-3 border-t pt-3">
@@ -504,6 +651,19 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                           View
                         </Link>
                       )}
+                      <button
+                        type="button"
+                        disabled={busy || g.status === "IN_PROGRESS"}
+                        title={
+                          g.status === "IN_PROGRESS"
+                            ? "Can't delete while it's generating"
+                            : undefined
+                        }
+                        className="text-xs text-destructive underline-offset-4 hover:underline disabled:opacity-50"
+                        onClick={() => void deleteGeneration(g)}
+                      >
+                        Delete
+                      </button>
                     </li>
                   ))}
                 </ul>

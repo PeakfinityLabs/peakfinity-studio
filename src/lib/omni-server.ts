@@ -67,32 +67,74 @@ async function probe(file: string): Promise<{ hasAudio: boolean; seconds: number
   };
 }
 
-/** The filter graph for stitching: every clip letterboxed onto one canvas, silent clips padded with silence. */
+export type Segment = { url: string; trimStart: number; trimEnd: number | null };
+
+/** Clamp a trim to the source length; returns the [start, end) actually played. */
+export function resolveTrim(seg: { trimStart: number; trimEnd: number | null }, seconds: number) {
+  const start = Math.min(Math.max(seg.trimStart, 0), Math.max(seconds - 0.1, 0));
+  const end =
+    seg.trimEnd === null ? seconds : Math.min(Math.max(seg.trimEnd, start + 0.1), seconds);
+  return { start, end };
+}
+
+/**
+ * The filter graph for stitching: each segment trimmed to its in/out points,
+ * letterboxed onto one canvas; silent sources padded with matching silence.
+ */
 export function buildConcatArgs(
-  clips: Array<{ file: string; hasAudio: boolean; seconds: number }>,
+  segments: Array<{ input: number; hasAudio: boolean; start: number; end: number }>,
+  sourceFiles: string[],
   canvas: { width: number; height: number },
   outFile: string
 ): string[] {
   const { width: w, height: h } = canvas;
-  const inputs: string[] = [];
+  const inputs: string[] = sourceFiles.flatMap((f) => ["-i", f]);
   const filters: string[] = [];
   const pairs: string[] = [];
-  let next = 0;
-  for (const [i, clip] of clips.entries()) {
-    inputs.push("-i", clip.file);
-    const v = next++;
+  let next = sourceFiles.length;
+  // A source used by several segments (a cut clip) must be split explicitly —
+  // ffmpeg can't feed one input pad to two filter chains.
+  const uses = new Map<number, number>();
+  for (const seg of segments) uses.set(seg.input, (uses.get(seg.input) ?? 0) + 1);
+  const taken = new Map<number, number>();
+  for (const [input, n] of uses) {
+    if (n < 2) continue;
+    const hasAudio = segments.find((s) => s.input === input)!.hasAudio;
     filters.push(
-      `[${v}:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v${i}]`
+      `[${input}:v]fps=30,split=${n}${Array.from({ length: n }, (_, k) => `[sv${input}_${k}]`).join("")}`
     );
-    if (clip.hasAudio) {
-      filters.push(`[${v}:a]aresample=44100,aformat=channel_layouts=stereo[a${i}]`);
+    if (hasAudio) {
+      filters.push(
+        `[${input}:a]asplit=${n}${Array.from({ length: n }, (_, k) => `[sa${input}_${k}]`).join("")}`
+      );
+    }
+  }
+  // fps runs before trim (on the source): placed after setpts it re-pads the
+  // trimmed stream back out to the source's length.
+  const pad = (input: number, kind: "v" | "a") => {
+    if ((uses.get(input) ?? 0) < 2) return kind === "v" ? `[${input}:v]fps=30,` : `[${input}:a]`;
+    const k = taken.get(input) ?? 0;
+    if (kind === "a") taken.set(input, k + 1);
+    return `[s${kind}${input}_${k}]`;
+  };
+  for (const [i, seg] of segments.entries()) {
+    const t = `start=${seg.start.toFixed(3)}:end=${seg.end.toFixed(3)}`;
+    const vPad = pad(seg.input, "v");
+    filters.push(
+      `${vPad}trim=${t},setpts=PTS-STARTPTS,scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v${i}]`
+    );
+    if (seg.hasAudio) {
+      filters.push(
+        `${pad(seg.input, "a")}atrim=${t},asetpts=PTS-STARTPTS,aresample=44100,aformat=channel_layouts=stereo[a${i}]`
+      );
     } else {
       // concat needs an audio stream per segment — synthesize matching silence.
+      taken.set(seg.input, (taken.get(seg.input) ?? 0) + 1);
       inputs.push(
         "-f",
         "lavfi",
         "-t",
-        String(Math.max(clip.seconds, 0.1)),
+        (seg.end - seg.start).toFixed(3),
         "-i",
         "anullsrc=r=44100:cl=stereo"
       );
@@ -100,7 +142,7 @@ export function buildConcatArgs(
     }
     pairs.push(`[v${i}][a${i}]`);
   }
-  filters.push(`${pairs.join("")}concat=n=${clips.length}:v=1:a=1[v][a]`);
+  filters.push(`${pairs.join("")}concat=n=${segments.length}:v=1:a=1[v][a]`);
   return [
     "-hide_banner",
     "-y",
@@ -128,25 +170,33 @@ export function buildConcatArgs(
 }
 
 /**
- * Stitches clips (in order) into one MP4 on the project canvas. Returns the
- * path of the result plus a cleanup callback the caller MUST run.
+ * Renders segments (in order, trims applied) into one MP4 on the project
+ * canvas. Each distinct source is downloaded once even if cuts reuse it.
+ * Returns the result path plus a cleanup callback the caller MUST run.
  */
 export async function stitchClips(
-  urls: string[],
+  segments: Segment[],
   aspectRatio: string
 ): Promise<{ file: string; cleanup: () => Promise<void> }> {
   if (!ffmpegPath) throw new Error("ffmpeg is not available on this server");
   const dir = await mkdtemp(path.join(tmpdir(), "omni-"));
   const cleanup = () => rm(dir, { recursive: true, force: true });
   try {
-    const clips = [];
-    for (const [i, url] of urls.entries()) {
+    const sources = [...new Set(segments.map((s) => s.url))];
+    const files: string[] = [];
+    const info: Array<{ hasAudio: boolean; seconds: number }> = [];
+    for (const [i, url] of sources.entries()) {
       const file = path.join(dir, `in-${i}`);
       await writeFile(file, (await fetchClipBytes(url)).bytes);
-      clips.push({ file, ...(await probe(file)) });
+      files.push(file);
+      info.push(await probe(file));
     }
+    const resolved = segments.map((seg) => {
+      const input = sources.indexOf(seg.url);
+      return { input, hasAudio: info[input].hasAudio, ...resolveTrim(seg, info[input].seconds) };
+    });
     const out = path.join(dir, "out.mp4");
-    await run(ffmpegPath, buildConcatArgs(clips, exportCanvas(aspectRatio), out), {
+    await run(ffmpegPath, buildConcatArgs(resolved, files, exportCanvas(aspectRatio), out), {
       maxBuffer: 16 * 1024 * 1024,
       timeout: 10 * 60_000,
     });

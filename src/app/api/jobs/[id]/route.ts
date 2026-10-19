@@ -176,7 +176,12 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
   // Deleting the Job cascades its Assets. UsageEvent.jobId is set null (not
   // deleted) so the spend a completed generation already incurred stays counted.
-  await prisma.job.delete({ where: { id } });
+  // Omni Zone timeline clips made from this generation would point at deleted
+  // media — remove them in the same transaction.
+  await prisma.$transaction([
+    prisma.omniClip.deleteMany({ where: { sourceJobId: id } }),
+    prisma.job.delete({ where: { id } }),
+  ]);
 
   return NextResponse.json({ deleted: true });
 }

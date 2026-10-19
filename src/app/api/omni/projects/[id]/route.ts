@@ -43,6 +43,8 @@ export async function GET(_req: Request, { params }: Ctx) {
         label: c.label,
         url: c.url,
         sourceJobId: c.sourceJobId,
+        trimStart: c.trimStart,
+        trimEnd: c.trimEnd,
       })),
     },
     generations: generations.map((job) => {

@@ -300,6 +300,10 @@ model OmniClip {
   url         String
   /// Set when the clip came from one of the owner's own generations.
   sourceJobId String?
+  /// Non-destructive trim, in seconds of the source file. trimEnd null = play to the end.
+  /// A "cut" splits one clip into two rows over the same source.
+  trimStart   Float       @default(0)
+  trimEnd     Float?
   createdAt   DateTime    @default(now())
 
   @@index([projectId, position])

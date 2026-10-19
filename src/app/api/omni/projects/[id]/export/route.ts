@@ -32,7 +32,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const clips = await prisma.omniClip.findMany({
     where: { projectId: id },
     orderBy: { position: "asc" },
-    select: { url: true },
+    select: { url: true, trimStart: true, trimEnd: true },
   });
   if (clips.length === 0) {
     return NextResponse.json({ error: "Add clips to the timeline first" }, { status: 400 });
@@ -40,10 +40,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   let result: Awaited<ReturnType<typeof stitchClips>>;
   try {
-    result = await stitchClips(
-      clips.map((c) => c.url),
-      project.aspectRatio
-    );
+    result = await stitchClips(clips, project.aspectRatio);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Stitching failed";
     return NextResponse.json(
