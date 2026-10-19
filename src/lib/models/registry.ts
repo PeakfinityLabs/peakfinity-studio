@@ -61,9 +61,11 @@ export type ModelDef = {
   toFalInput: (params: ModelParams) => Record<string, unknown>;
   estimateCostCents: (params: ModelParams) => number;
   costNote: string;
+  /** API not hooked up yet: requests are saved as queued jobs and never sent to fal. */
+  notConnected?: true;
 };
 
-export type ModelSlug = "nano-banana-2" | "gpt-image-2" | "kling-o3" | "seedance-2";
+export type ModelSlug = "nano-banana-2" | "gpt-image-2" | "kling-o3" | "seedance-2" | "veo-3";
 
 const url = z.url();
 const urlArray = z.array(url);
@@ -334,6 +336,50 @@ const seedance2: ModelDef = {
   costNote: "≈$0.30/s at 720p · ×0.6 with video refs (token-based; estimate)",
 };
 
+// ─── Veo 3 (Google) — text/image-to-video · API NOT CONNECTED YET ──────────
+// Requests are validated and saved as queued jobs (visible in the Library) but
+// never submitted anywhere. Hook up the provider + pricing here later.
+
+const veo3Schema = z.object({
+  prompt: z.string().trim().min(1, "Prompt is required").max(5000),
+  image_url: url.optional(),
+  aspect_ratio: z.enum(["16:9", "9:16"]).default("9:16"),
+  duration: z.enum(["4s", "6s", "8s"]).default("8s"),
+  resolution: z.enum(["720p", "1080p"]).default("720p"),
+  generate_audio: z.boolean().default(true),
+  negative_prompt: z.string().trim().max(2000).optional(),
+  seed: z.coerce.number().int().optional(),
+});
+
+const veo3: ModelDef = {
+  slug: "veo-3",
+  genModel: "VEO_3",
+  label: "Veo 3",
+  tagline: "Google video with native audio — dialogue, sound effects and music in one pass",
+  type: "VIDEO",
+  promptRequired: true,
+  promptPlaceholder:
+    "Describe the shot: subject, action, setting, camera, lighting and sound (put dialogue in quotes)…",
+  schema: veo3Schema,
+  fields: [
+    { kind: "select", name: "aspect_ratio", label: "Aspect ratio", options: ["16:9", "9:16"], optionLabels: ASPECT_RATIO_LABELS },
+    { kind: "select", name: "duration", label: "Duration", options: ["4s", "6s", "8s"] },
+    { kind: "select", name: "resolution", label: "Resolution", options: ["720p", "1080p"] },
+    { kind: "switch", name: "generate_audio", label: "Generate audio" },
+    { kind: "text", name: "negative_prompt", label: "Negative prompt", help: "Optional — what to avoid" },
+    { kind: "number", name: "seed", label: "Seed", min: 0, max: 2147483647, help: "Optional — for reproducibility" },
+  ],
+  uploaders: [
+    { name: "image_url", label: "Start frame (optional — animates this image)", accept: "image/*", max: 1, single: true },
+  ],
+  defaults: { aspect_ratio: "9:16", duration: "8s", resolution: "720p", generate_audio: true },
+  resolveEndpoint: () => "not-connected/veo-3",
+  toFalInput: stripEmpty,
+  estimateCostCents: () => 0, // ponytail: pricing lands with the API hookup
+  costNote: "API not connected yet — requests are saved, not run",
+  notConnected: true,
+};
+
 // ─── Registry ────────────────────────────────────────────────────────────────
 
 export const MODELS: Record<ModelSlug, ModelDef> = {
@@ -341,6 +387,7 @@ export const MODELS: Record<ModelSlug, ModelDef> = {
   "gpt-image-2": gptImage2,
   "kling-o3": klingO3,
   "seedance-2": seedance2,
+  "veo-3": veo3,
 };
 
 export const MODEL_SLUGS = Object.keys(MODELS) as ModelSlug[];
@@ -359,11 +406,17 @@ export function formatCents(cents: number): string {
 
 export const KLING_LIPSYNC_LABEL = "Voice change (lip-sync)";
 export const VOICE_SWAP_LABEL = "Voice swap";
+/** Omni Zone generations — made inside an Omni project, not a studio page. */
+export const OMNI_FLASH_LABEL = "Omni Flash";
+
+/** Models whose API isn't hooked up yet: their jobs stay queued and never poll fal. */
+export const NOT_CONNECTED_GEN_MODELS: readonly string[] = ["VEO_3", "OMNI_FLASH"];
 
 /** Display label for any GenModel, including non-studio ones. */
 export function labelForGenModel(genModel: string): string {
   if (genModel === "KLING_LIPSYNC") return KLING_LIPSYNC_LABEL;
   if (genModel === "VOICE_SWAP") return VOICE_SWAP_LABEL;
+  if (genModel === "OMNI_FLASH") return OMNI_FLASH_LABEL;
   const def = MODEL_SLUGS.map((s) => MODELS[s]).find((m) => m.genModel === genModel);
   return def?.label ?? genModel;
 }

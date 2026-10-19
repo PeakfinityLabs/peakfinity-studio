@@ -11,7 +11,13 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChangeVoiceDialog } from "@/components/jobs/change-voice-dialog";
 import { fetchJson } from "@/lib/http";
-import { formatCents, labelForGenModel, MODEL_SLUGS, MODELS } from "@/lib/models/registry";
+import {
+  formatCents,
+  labelForGenModel,
+  MODEL_SLUGS,
+  MODELS,
+  NOT_CONNECTED_GEN_MODELS,
+} from "@/lib/models/registry";
 import { FAL_MEDIA_RETENTION_DAYS, isMediaExpired } from "@/lib/media";
 
 const POLL_MS = 3000;
@@ -98,8 +104,10 @@ export function JobView({
       const data = await fetchJson<{ job: JobData }>(`/api/jobs/${jobId}`, { cache: "no-store" });
       setJob(data.job);
       const chained = data.job.input?.chainedJobId;
+      // Not-connected models (Veo 3, Omni Flash) never progress — don't poll.
       keepPolling =
-        OPEN_STATUSES.includes(data.job.status) ||
+        (OPEN_STATUSES.includes(data.job.status) &&
+          !NOT_CONNECTED_GEN_MODELS.includes(data.job.model)) ||
         // A voiced generation isn't really done until its lip-sync chain has
         // been created — keep polling through the TTS window so the link
         // appears without a manual refresh.
@@ -160,6 +168,8 @@ export function JobView({
 
   const def = MODEL_SLUGS.map((s) => MODELS[s]).find((m) => m.genModel === job.model);
   const isOpen = OPEN_STATUSES.includes(job.status);
+  const notConnected = NOT_CONNECTED_GEN_MODELS.includes(job.model);
+  const projectId = (job.input as { projectId?: unknown } | null)?.projectId;
   const outputs = job.assets.filter((a) => a.kind === "OUTPUT");
   const lines = logLines(job.logs);
   const canChangeVoice =
@@ -264,7 +274,27 @@ export function JobView({
         </p>
       )}
 
-      {isOpen && (
+      {notConnected && isOpen && (
+        <Card>
+          <CardContent className="space-y-1 pt-4 text-sm">
+            <p>Saved — the {labelForGenModel(job.model)} API isn&apos;t connected yet.</p>
+            <p className="text-xs text-muted-foreground">
+              This request is stored with all its settings and will be ready to run once the model
+              is hooked up.
+              {typeof projectId === "string" && job.user.id === currentUserId && (
+                <>
+                  {" "}
+                  <Link href={`/omni/${projectId}`} className="underline underline-offset-4">
+                    Back to the Omni project
+                  </Link>
+                </>
+              )}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {isOpen && !notConnected && (
         <Card>
           <CardContent className="space-y-3 pt-4">
             <div className="flex items-center gap-3">

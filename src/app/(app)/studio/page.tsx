@@ -46,6 +46,29 @@ export default function StudioPage() {
             </Link>
           );
         })}
+        <Link href="/omni" className="group">
+          <div className="lift relative flex h-full flex-col gap-5 overflow-hidden rounded-2xl border bg-card p-5">
+            <div className="flex items-start justify-between">
+              <ModelGlyph slug="omni-zone" className="h-12 w-12" />
+              <span className="label-mono border-b border-transparent pt-1">Workspace</span>
+            </div>
+            <div className="space-y-1.5">
+              <h2 className="text-display text-lg tracking-tight">Omni Zone</h2>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Your own Omni studio: create, animate, edit and extend clips with named team
+                avatars, then stitch them into one video
+              </p>
+            </div>
+            <div className="mt-auto flex items-center gap-3 border-t border-border/60 pt-4">
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+                Omni Flash API not connected yet — requests are saved, not run
+              </span>
+              <span className="shrink-0 text-sm font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+                Open →
+              </span>
+            </div>
+          </div>
+        </Link>
       </div>
     </div>
   );

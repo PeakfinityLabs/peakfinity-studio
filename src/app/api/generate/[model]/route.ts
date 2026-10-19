@@ -127,19 +127,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
   // The studio form still shows the combined figure pre-submit.
   const estimatedCostCents = def.estimateCostCents(modelParams);
 
-  let falRequestId: string;
-  try {
-    const submitted = await fal.queue.submit(endpoint, {
-      input: falInput,
-      webhookUrl: falWebhookUrl(),
-    });
-    falRequestId = submitted.request_id;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "fal submission failed";
-    return NextResponse.json(
-      { error: `fal rejected the submission: ${message}` },
-      { status: 502 }
-    );
+  // Models without a hooked-up API (Veo 3) are saved as queued jobs only —
+  // nothing is sent to fal.
+  let falRequestId: string | null = null;
+  if (!def.notConnected) {
+    try {
+      const submitted = await fal.queue.submit(endpoint, {
+        input: falInput,
+        webhookUrl: falWebhookUrl(),
+      });
+      falRequestId = submitted.request_id;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "fal submission failed";
+      return NextResponse.json(
+        { error: `fal rejected the submission: ${message}` },
+        { status: 502 }
+      );
+    }
   }
 
   const prompt = typeof modelParams.prompt === "string" ? modelParams.prompt : "";

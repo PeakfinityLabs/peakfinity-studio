@@ -6,7 +6,13 @@ import type { ModelSlug } from "@/lib/models/registry";
  * Purely decorative — gives each model card a visual identity within the
  * strict black/grey/white system.
  */
-export function ModelGlyph({ slug, className }: { slug: ModelSlug; className?: string }) {
+export function ModelGlyph({
+  slug,
+  className,
+}: {
+  slug: ModelSlug | "omni-zone";
+  className?: string;
+}) {
   return (
     <span
       className={cn(
@@ -21,7 +27,7 @@ export function ModelGlyph({ slug, className }: { slug: ModelSlug; className?: s
   );
 }
 
-const glyphs: Record<ModelSlug, React.ReactNode> = {
+const glyphs: Record<ModelSlug | "omni-zone", React.ReactNode> = {
   // Nano Banana 2 — concentric aperture
   "nano-banana-2": (
     <>
@@ -53,6 +59,22 @@ const glyphs: Record<ModelSlug, React.ReactNode> = {
       <path d="M4 12c4-3 12-3 16 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.7" />
       <path d="M4 16c4-3 12-3 16 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.4" />
       <circle cx="12" cy="10.5" r="1.6" fill="currentColor" />
+    </>
+  ),
+  // Veo 3 — film frame with sound wave
+  "veo-3": (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M7 12h1.5M10 9.5v5M13 8v8M16 10.5v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </>
+  ),
+  // Omni Zone — clips joined on a timeline
+  "omni-zone": (
+    <>
+      <rect x="3" y="7" width="6" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="9" y="7" width="6" height="10" rx="1.5" fill="currentColor" opacity="0.35" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="15" y="7" width="6" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="12" cy="4" r="1.4" fill="currentColor" />
     </>
   ),
 };

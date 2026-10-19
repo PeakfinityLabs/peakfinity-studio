@@ -43,6 +43,8 @@ const MODEL_NOTES: Record<ModelSlug, string> = {
     "Model: Kling O3 image-to-video. The clip starts from the uploaded frame; describe motion and camera FROM that frame — do not re-describe the frame's static contents.",
   "seedance-2":
     "Model: Seedance 2.0 reference-to-video. Preserve any @Image/@Video/@Audio references the editor used (same numbering), embedded naturally in the action; never invent new ones.",
+  "veo-3":
+    "Model: Veo 3 text/image-to-video with native audio. Describe the sound too (ambience, effects, music) and put any spoken dialogue in double quotes with who says it.",
 };
 
 export const OPTIMIZER_TEMPLATES: Record<ModelSlug, string> = {
@@ -50,6 +52,7 @@ export const OPTIMIZER_TEMPLATES: Record<ModelSlug, string> = {
   "gpt-image-2": `${SHARED_RULES}\n${IMAGE_RULES}\n${MODEL_NOTES["gpt-image-2"]}`,
   "kling-o3": `${SHARED_RULES}\n${VIDEO_RULES}\n${MODEL_NOTES["kling-o3"]}`,
   "seedance-2": `${SHARED_RULES}\n${VIDEO_RULES}\n${MODEL_NOTES["seedance-2"]}`,
+  "veo-3": `${SHARED_RULES}\n${VIDEO_RULES}\n${MODEL_NOTES["veo-3"]}`,
 };
 
 // ─── Optimizer styles (ad-creative presets) ──────────────────────────────────

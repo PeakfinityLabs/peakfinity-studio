@@ -28,6 +28,10 @@ enum GenModel {
   /// Swap the voice of a video's existing speech (ElevenLabs speech-to-speech
   /// + audio remux) — keeps the words and timing, no typing.
   VOICE_SWAP
+  /// Google Veo 3 — studio model, API not connected yet (requests are saved, not run).
+  VEO_3
+  /// Omni Zone generations (Omni Flash) — API not connected yet.
+  OMNI_FLASH
 }
 
 enum JobType {
@@ -84,6 +88,8 @@ model User {
   creatives       Creative[]   @relation("CreativeEditor")
   strategistOn    Creative[]   @relation("CreativeStrategist")
   resetTokens     PasswordResetToken[]
+  omniProjects    OmniProject[]
+  avatars         Avatar[]
 
   @@index([status, createdAt])
 }
@@ -265,4 +271,55 @@ model UsageEvent {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+/// Omni Zone project: one editor's private workspace (never visible to other
+/// users, admins included). Its generations are ordinary Jobs tagged with
+/// input.projectId, so they still show in the Library for admins.
+model OmniProject {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  /// "16:9" | "9:16" — also the canvas the stitched export is rendered at.
+  aspectRatio String     @default("9:16")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  clips       OmniClip[]
+
+  @@index([userId, updatedAt])
+}
+
+/// One clip on a project's timeline, in `position` order.
+model OmniClip {
+  id          String      @id @default(cuid())
+  projectId   String
+  project     OmniProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  position    Int
+  label       String
+  url         String
+  /// Set when the clip came from one of the owner's own generations.
+  sourceJobId String?
+  createdAt   DateTime    @default(now())
+
+  @@index([projectId, position])
+}
+
+/// Named character for consistency across Omni Zone generations. The owner
+/// decides whether the rest of the team can see and use it (`shared`).
+model Avatar {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  /// Reference image stored in-app (not on fal's ~7-day CDN) so avatars
+  /// persist and private ones stay private. Resized client-side, ≤2MB.
+  imageData   Bytes
+  imageType   String
+  shared      Boolean  @default(true)
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@index([shared, createdAt])
+  @@index([createdById])
 }
