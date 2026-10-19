@@ -25,6 +25,24 @@ export function visibleAvatarsWhere(me: Pick<SessionUser, "id">) {
   return { OR: [{ shared: true }, { createdById: me.id }] };
 }
 
+/**
+ * Keeps only avatar ids `me` may use (shared, or their own), deduped, in order.
+ * Used to validate a project's saved avatars on write and to drop ones that
+ * were deleted or made private on read.
+ */
+export async function usableAvatarIds(
+  me: Pick<SessionUser, "id">,
+  ids: string[]
+): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const ok = await prisma.avatar.findMany({
+    where: { id: { in: ids }, ...visibleAvatarsWhere(me) },
+    select: { id: true },
+  });
+  const allowed = new Set(ok.map((a) => a.id));
+  return [...new Set(ids)].filter((id) => allowed.has(id));
+}
+
 /** Fetches a clip's bytes (fal CDN or our R2 media). Throws on anything else. */
 export async function fetchClipBytes(
   url: string

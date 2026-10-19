@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
-import { OMNI_ASPECT_RATIOS } from "@/lib/omni";
-import { findOwnProject } from "@/lib/omni-server";
+import { MAX_AVATARS, OMNI_ASPECT_RATIOS } from "@/lib/omni";
+import { findOwnProject, usableAvatarIds } from "@/lib/omni-server";
 
 export const runtime = "nodejs";
 
@@ -12,6 +12,7 @@ type Ctx = { params: Promise<{ id: string }> };
 const updateSchema = z.object({
   name: z.string().trim().min(1, "Name the project").max(80).optional(),
   aspectRatio: z.enum(OMNI_ASPECT_RATIOS).optional(),
+  avatarIds: z.array(z.string().min(1)).max(MAX_AVATARS).optional(),
 });
 
 /** Project + its timeline + the generations made inside it. Owner only. */
@@ -38,6 +39,8 @@ export async function GET(_req: Request, { params }: Ctx) {
       id: project.id,
       name: project.name,
       aspectRatio: project.aspectRatio,
+      // Drop avatars deleted or made private since they were picked.
+      avatarIds: await usableAvatarIds(me, project.avatarIds),
       clips: project.clips.map((c) => ({
         id: c.id,
         label: c.label,
@@ -77,7 +80,18 @@ export async function PATCH(req: Request, { params }: Ctx) {
       { status: 400 }
     );
   }
-  await prisma.omniProject.update({ where: { id }, data: parsed.data });
+  const data = { ...parsed.data };
+  if (data.avatarIds) {
+    const ok = await usableAvatarIds(me, data.avatarIds);
+    if (ok.length !== new Set(data.avatarIds).size) {
+      return NextResponse.json(
+        { error: "One of the avatars is no longer available" },
+        { status: 404 }
+      );
+    }
+    data.avatarIds = ok;
+  }
+  await prisma.omniProject.update({ where: { id }, data });
   return NextResponse.json({ ok: true });
 }
 

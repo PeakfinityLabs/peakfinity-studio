@@ -18,7 +18,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ReferenceUploader } from "@/components/studio/reference-uploader";
-import { useAvatars } from "@/components/omni/avatar-library";
+import { NewAvatarDialog, useAvatars } from "@/components/omni/avatar-library";
 import { ClipEditor } from "@/components/omni/clip-editor";
 import { fetchJson } from "@/lib/http";
 import { cn } from "@/lib/utils";
@@ -49,7 +49,13 @@ type Generation = {
   createdAt: string;
   outputUrl: string | null;
 };
-type ProjectData = { id: string; name: string; aspectRatio: string; clips: Clip[] };
+type ProjectData = {
+  id: string;
+  name: string;
+  aspectRatio: string;
+  avatarIds: string[];
+  clips: Clip[];
+};
 
 const STATUS_LABEL: Record<string, string> = {
   IN_QUEUE: "Saved · API not connected",
@@ -63,7 +69,8 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [project, setProject] = useState<ProjectData | null>(null);
   const [generations, setGenerations] = useState<Generation[]>([]);
-  const { avatars } = useAvatars();
+  const { avatars, reload: reloadAvatars } = useAvatars();
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
 
   // Generator state
   const [mode, setMode] = useState<OmniMode>("create");
@@ -94,14 +101,16 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
       );
       setProject(d.project);
       setGenerations(d.generations);
+      return d.project;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not load project");
       router.push("/omni");
     }
   }, [projectId, router]);
 
+  // Create mode starts with the avatars picked for the project.
   useEffect(() => {
-    void load();
+    void load().then((p) => p && setAvatarIds(p.avatarIds));
   }, [load]);
 
   if (!project) {
@@ -172,6 +181,19 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Changing the Create selection also updates the project's default avatars.
+  const chooseAvatars = (ids: string[]) => {
+    setAvatarIds(ids);
+    setProject({ ...project, avatarIds: ids });
+    void fetchJson(`/api/omni/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ avatarIds: ids }),
+    }).catch((error) =>
+      toast.error(error instanceof Error ? error.message : "Couldn't save avatar choice")
+    );
   };
 
   const commitOrder = (order: string[]) => {
@@ -705,14 +727,6 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                 <Label>Avatars</Label>
                 {avatars === null ? (
                   <Skeleton className="h-16 w-full" />
-                ) : avatars.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    No avatars yet —{" "}
-                    <Link href="/omni" className="underline underline-offset-4">
-                      add one
-                    </Link>{" "}
-                    for character consistency.
-                  </p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {avatars.map((a) => {
@@ -722,11 +736,11 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                           key={a.id}
                           type="button"
                           aria-pressed={on}
-                          title={a.description ?? a.name}
+                          title={a.description ? `${a.name} — ${a.description}` : a.name}
                           disabled={!on && avatarIds.length >= MAX_AVATARS}
                           onClick={() =>
-                            setAvatarIds((ids) =>
-                              on ? ids.filter((x) => x !== a.id) : [...ids, a.id]
+                            chooseAvatars(
+                              on ? avatarIds.filter((x) => x !== a.id) : [...avatarIds, a.id]
                             )
                           }
                           className={cn(
@@ -744,11 +758,25 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                         </button>
                       );
                     })}
+                    <button
+                      type="button"
+                      disabled={avatarIds.length >= MAX_AVATARS}
+                      onClick={() => setAvatarDialogOpen(true)}
+                      className="flex w-16 flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-1 text-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+                    >
+                      <span className="flex aspect-square w-full items-center justify-center text-xl">
+                        +
+                      </span>
+                      <span className="block text-[10px]">New avatar</span>
+                    </button>
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Up to {MAX_AVATARS}. Mention them by name in the prompt (e.g. &quot;Linda walks
-                  in…&quot;).
+                  Selected avatars are saved as this project&apos;s default. Up to {MAX_AVATARS}.
+                  Mention them by name in the prompt (e.g. &quot;
+                  {avatars?.find((x) => avatarIds.includes(x.id))?.name.split(/[\s—,-]/)[0] ??
+                    "Linda"}{" "}
+                  walks in…&quot;).
                 </p>
               </div>
             )}
@@ -893,6 +921,15 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      <NewAvatarDialog
+        open={avatarDialogOpen}
+        onOpenChange={setAvatarDialogOpen}
+        onCreated={async (id) => {
+          await reloadAvatars();
+          if (avatarIds.length < MAX_AVATARS) chooseAvatars([...avatarIds, id]);
+        }}
+      />
     </div>
   );
 }

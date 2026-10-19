@@ -283,6 +283,9 @@ model OmniProject {
   name        String
   /// "16:9" | "9:16" — also the canvas the stitched export is rendered at.
   aspectRatio String     @default("9:16")
+  /// Avatars picked for this project; Create mode starts with these selected.
+  /// Ids only — deleted/unshared avatars are filtered out on read.
+  avatarIds   String[]   @default([])
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   clips       OmniClip[]

@@ -209,19 +209,20 @@ export function AvatarLibrary({
         </div>
       )}
 
-      <NewAvatarDialog open={open} onOpenChange={setOpen} onCreated={reload} />
+      <NewAvatarDialog open={open} onOpenChange={setOpen} onCreated={() => reload()} />
     </div>
   );
 }
 
-function NewAvatarDialog({
+/** New-avatar form in a dialog. `onCreated` receives the new avatar's id. */
+export function NewAvatarDialog({
   open,
   onOpenChange,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: () => Promise<void>;
+  onCreated: (avatarId: string) => Promise<void> | void;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -262,11 +263,14 @@ function NewAvatarDialog({
       form.append("name", name.trim());
       if (description.trim()) form.append("description", description.trim());
       form.append("shared", shared ? "1" : "0");
-      await fetchJson("/api/avatars", { method: "POST", body: form });
+      const d = await fetchJson<{ avatar: { id: string } }>("/api/avatars", {
+        method: "POST",
+        body: form,
+      });
       toast.success(`Avatar "${name.trim()}" saved`);
       onOpenChange(false);
       reset();
-      await onCreated();
+      await onCreated(d.avatar.id);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save avatar");
     } finally {
