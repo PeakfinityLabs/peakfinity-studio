@@ -61,7 +61,7 @@ export default function StudioPage() {
             </div>
             <div className="mt-auto flex items-center gap-3 border-t border-border/60 pt-4">
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-                Omni Flash API not connected yet — requests are saved, not run
+                Omni Flash 1.1 · 720p · ≈$0.03 per 8s clip
               </span>
               <span className="shrink-0 text-sm font-medium text-muted-foreground transition-colors group-hover:text-foreground">
                 Open →

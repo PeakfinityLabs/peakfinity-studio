@@ -71,6 +71,25 @@ export async function fetchClipBytes(
   };
 }
 
+/**
+ * Duration/audio of a clip: a local file path ({local:true}) or an allowed
+ * clip URL (downloaded to a temp file first).
+ */
+export async function probeClip(
+  source: string,
+  opts: { local?: boolean } = {}
+): Promise<{ hasAudio: boolean; seconds: number }> {
+  if (opts.local) return probe(source);
+  const dir = await mkdtemp(path.join(tmpdir(), "omni-probe-"));
+  try {
+    const file = path.join(dir, "in");
+    await writeFile(file, (await fetchClipBytes(source)).bytes);
+    return await probe(file);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 /** ffmpeg prints stream info to stderr and exits 1 when given no output. */
 async function probe(file: string): Promise<{ hasAudio: boolean; seconds: number }> {
   const stderr: string = await run(ffmpegPath!, ["-hide_banner", "-i", file]).then(

@@ -4,14 +4,20 @@ import { prisma } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { OMNI_ENDPOINT, omniGenerateSchema } from "@/lib/omni";
 import { findOwnProject, visibleAvatarsWhere } from "@/lib/omni-server";
+import { submitJob, toAspect, type OmnirouterInput } from "@/lib/omnirouter";
+import { MAX_SOURCE_VIDEO_SECONDS } from "@/lib/omni";
+import { publicVideoWindow } from "@/lib/omni-video";
 import type { Prisma } from "@/generated/prisma/client";
 
 export const runtime = "nodejs";
 
 /**
- * Omni Flash generation request. The API is NOT connected yet: the request is
- * validated and saved as a queued OMNI_FLASH job (admins see it in the
- * Library), and nothing is sent to any provider.
+ * Omni Flash 1.1 generation (via omnirouter). Mode → provider input:
+ *   create  → prompt + reference_image_urls (avatars as data: URIs + ingredients)
+ *   animate → start_image_url
+ *   edit    → reference_video_url (last ≤10s of the uploaded MP4)
+ *   extend  → reference_video_url (last ≤10s of the timeline clip)
+ * Saved as an OMNI_FLASH job; results land via polling (refreshOmnirouterJob).
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const me = await apiGuard();
@@ -43,7 +49,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const avatars = avatar_ids.length
     ? await prisma.avatar.findMany({
         where: { id: { in: avatar_ids }, ...visibleAvatarsWhere(me) },
-        select: { id: true, name: true },
+        select: { id: true, name: true, imageData: true, imageType: true },
       })
     : [];
   if (avatars.length !== new Set(avatar_ids).size) {
@@ -53,11 +59,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  let sourceClip: { id: string; url: string } | null = null;
+  let sourceClip: { id: string; url: string; trimStart: number; trimEnd: number | null } | null =
+    null;
   if (rest.mode === "extend") {
     sourceClip = await prisma.omniClip.findFirst({
       where: { id: source_clip_id, projectId: id },
-      select: { id: true, url: true },
+      select: { id: true, url: true, trimStart: true, trimEnd: true },
     });
     if (!sourceClip)
       return NextResponse.json({ error: "Clip not found in this project" }, { status: 404 });
@@ -81,23 +88,83 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     ...(typeof modeParams.video_url === "string" ? [modeParams.video_url] : []),
   ];
 
+  // Build the provider request for this mode.
+  const base = {
+    prompt: rest.prompt,
+    aspect_ratio: toAspect(rest.aspect_ratio),
+  };
+  let providerInput: OmnirouterInput;
+  try {
+    if (rest.mode === "create") {
+      // Avatar images live in our DB behind auth, so send them inline.
+      const avatarRefs = avatars.map(
+        (a) => `data:${a.imageType};base64,${Buffer.from(a.imageData).toString("base64")}`
+      );
+      const refs = [...avatarRefs, ...rest.image_urls];
+      providerInput = {
+        ...base,
+        duration_sec: Number(rest.duration),
+        ...(refs.length ? { reference_image_urls: refs } : {}),
+      };
+    } else if (rest.mode === "animate") {
+      providerInput = {
+        ...base,
+        duration_sec: Number(rest.duration),
+        start_image_url: rest.image_url,
+      };
+    } else {
+      // edit / extend: the provider fetches an https MP4 and works on a ≤10s window.
+      const window = await publicVideoWindow(
+        rest.mode === "edit" ? { url: rest.video_url!, trimStart: 0, trimEnd: null } : sourceClip!,
+        MAX_SOURCE_VIDEO_SECONDS,
+        project.aspectRatio
+      );
+      providerInput = {
+        ...base,
+        reference_video_url: window.url,
+        trim_start_sec: window.trimStart,
+        trim_end_sec: window.trimEnd,
+      };
+    }
+  } catch (error) {
+    // Storage/ffmpeg errors can have empty messages — always say what failed.
+    const detail = error instanceof Error && error.message ? `: ${error.message}` : "";
+    return NextResponse.json(
+      { error: `Couldn't prepare the source video for Omni${detail}` },
+      { status: 400 }
+    );
+  }
+
+  let remoteId: string;
+  try {
+    remoteId = (await submitJob("omni-flash", providerInput)).id;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "submission failed";
+    return NextResponse.json(
+      { error: `Omni Flash rejected the request: ${message}` },
+      { status: 502 }
+    );
+  }
+
   const job = await prisma.job.create({
     data: {
       userId: me.id,
       model: "OMNI_FLASH",
       type: "VIDEO",
       status: "IN_QUEUE",
+      falRequestId: remoteId,
       input: {
         endpoint: OMNI_ENDPOINT,
         params: modeParams,
         mode: rest.mode,
         projectId: id,
         projectName: project.name,
-        avatars,
+        avatars: avatars.map((a) => ({ id: a.id, name: a.name })),
         ...(sourceClip ? { sourceClipId: sourceClip.id } : {}),
       } as Prisma.InputJsonValue,
       prompt: rest.prompt,
-      estimatedCostCents: 0, // usage amounts come with the API hookup
+      // Replaced by the provider's real cost when the job settles.
+      estimatedCostCents: Math.max(1, Math.round(Number(rest.duration) * 0.375)),
       assets: {
         create: inputUrls.map((url) => ({
           kind: "INPUT" as const,

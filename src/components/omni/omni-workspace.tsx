@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ import {
   OMNI_DURATIONS,
   OMNI_MODE_INFO,
   OMNI_MODES,
-  OMNI_RESOLUTIONS,
+  MAX_REFERENCE_IMAGES,
   type OmniMode,
 } from "@/lib/omni";
 
@@ -41,6 +41,7 @@ type Clip = {
   trimEnd: number | null;
 };
 type Generation = {
+  errorMessage?: string | null;
   id: string;
   status: string;
   prompt: string;
@@ -58,7 +59,7 @@ type ProjectData = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  IN_QUEUE: "Saved · API not connected",
+  IN_QUEUE: "Queued",
   IN_PROGRESS: "Generating",
   COMPLETED: "Ready",
   FAILED: "Failed",
@@ -76,7 +77,6 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
   const [mode, setMode] = useState<OmniMode>("create");
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState<string>("8");
-  const [resolution, setResolution] = useState<string>("720p");
   const [avatarIds, setAvatarIds] = useState<string[]>([]);
   const [ingredients, setIngredients] = useState<string[]>([]);
   const [photo, setPhoto] = useState<string[]>([]);
@@ -93,6 +93,7 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
+  const loadedRef = useRef(false);
   const load = useCallback(async () => {
     try {
       const d = await fetchJson<{ project: ProjectData; generations: Generation[] }>(
@@ -101,12 +102,23 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
       );
       setProject(d.project);
       setGenerations(d.generations);
+      loadedRef.current = true;
       return d.project;
     } catch (error) {
+      // A failed background refresh keeps the page; only a failed first load leaves.
+      if (loadedRef.current) return;
       toast.error(error instanceof Error ? error.message : "Could not load project");
       router.push("/omni");
     }
   }, [projectId, router]);
+
+  // Poll while any generation is still running (the server settles it on read).
+  const hasOpen = generations.some((g) => g.status === "IN_QUEUE" || g.status === "IN_PROGRESS");
+  useEffect(() => {
+    if (!hasOpen) return;
+    const t = setInterval(() => void load(), 6000);
+    return () => clearInterval(t);
+  }, [hasOpen, load]);
 
   // Create mode starts with the avatars picked for the project.
   useEffect(() => {
@@ -124,7 +136,8 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
 
   const clips = project.clips;
   const portrait = project.aspectRatio === "9:16";
-  const maxIngredients = mode === "edit" ? MAX_INGREDIENTS.edit : MAX_INGREDIENTS.create;
+  // Avatars + ingredients share the provider's 10-image limit.
+  const maxIngredients = Math.min(MAX_INGREDIENTS.create, MAX_REFERENCE_IMAGES - avatarIds.length);
   const missing = !prompt.trim()
     ? "Write a prompt"
     : mode === "animate" && !photo[0]
@@ -164,16 +177,15 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
           prompt,
           aspect_ratio: project.aspectRatio,
           duration,
-          resolution,
+          resolution: "720p",
           avatar_ids: mode === "create" ? avatarIds : [],
-          image_urls:
-            mode === "create" || mode === "edit" ? ingredients.slice(0, maxIngredients) : [],
+          image_urls: mode === "create" ? ingredients.slice(0, maxIngredients) : [],
           ...(mode === "animate" ? { image_url: photo[0] } : {}),
           ...(mode === "edit" ? { video_url: video[0] } : {}),
           ...(mode === "extend" ? { source_clip_id: extendClipId } : {}),
         }),
       });
-      toast.success("Saved — Omni Flash isn't connected yet, so this request is queued, not run.");
+      toast.success("Generating — the clip appears below when it's ready (usually 1–3 min).");
       setPrompt("");
       await load();
     } catch (error) {
@@ -639,6 +651,11 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                           {g.duration ? ` · ${String(g.duration)}s` : ""} ·{" "}
                           {new Date(g.createdAt).toLocaleString()}
                         </p>
+                        {g.status === "FAILED" && g.errorMessage && (
+                          <p className="truncate text-xs text-destructive" title={g.errorMessage}>
+                            {g.errorMessage}
+                          </p>
+                        )}
                       </div>
                       <Badge
                         variant={
@@ -799,8 +816,8 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
               <ReferenceUploader
                 def={{
                   name: "video_url",
-                  label: "Video to edit",
-                  accept: "video/*",
+                  label: "Video to edit (MP4)",
+                  accept: "video/mp4",
                   max: 1,
                   single: true,
                   required: true,
@@ -857,7 +874,7 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
               />
             </div>
 
-            {(mode === "create" || mode === "edit") && (
+            {mode === "create" && (
               <ReferenceUploader
                 def={{
                   name: "image_urls",
@@ -887,24 +904,9 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label>Resolution</Label>
-                <Select value={resolution} onValueChange={(v) => v && setResolution(v)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue>{resolution}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {OMNI_RESOLUTIONS.map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {r}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Format: {project.aspectRatio} (set by the project)
+              {project.aspectRatio} · 720p (set by the project)
             </p>
 
             <Button
@@ -913,10 +915,13 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
               disabled={submitting || Boolean(missing)}
               onClick={() => void generate()}
             >
-              {submitting ? "Saving…" : "Generate"}
+              {submitting ? "Submitting…" : "Generate"}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
-              {missing ?? "Omni Flash API not connected yet — requests are saved, not run."}
+              {missing ??
+                (mode === "edit" || mode === "extend"
+                  ? "Omni Flash 1.1 · edits the last 10s of the clip"
+                  : "Omni Flash 1.1 · ≈$0.03 per 8s clip")}
             </p>
           </CardContent>
         </Card>

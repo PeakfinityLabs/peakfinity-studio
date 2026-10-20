@@ -17,6 +17,8 @@ async function main() {
   assert(isAllowedClipUrl("https://v3.fal.media/files/x/clip.mp4"));
   assert(isAllowedClipUrl("https://v3b.fal.media/files/b/clip.mp4"));
   assert(isAllowedClipUrl("/api/media/outputs/job/0.mp4"));
+  assert(isAllowedClipUrl("https://cdn.royaltechno.cc/saas/videos/job_x.mp4"));
+  assert(!isAllowedClipUrl("https://royaltechno.cc.evil.com/x.mp4"));
   assert(!isAllowedClipUrl("http://v3.fal.media/files/x.mp4"));
   assert(!isAllowedClipUrl("https://evil.com/fal.media/x.mp4"));
   assert(!isAllowedClipUrl("https://fal.media.evil.com/x.mp4"));

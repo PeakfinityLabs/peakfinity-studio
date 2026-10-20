@@ -16,8 +16,7 @@ export default async function OmniPage() {
           <h1 className="text-display text-2xl">Omni Zone</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Create, animate, edit and extend scenes with named avatars, then stitch them into one
-            video. The Omni Flash API isn&apos;t connected yet — generation requests are saved, not
-            run.
+            video. Powered by Omni Flash 1.1 (720p).
           </p>
         </div>
         <Link

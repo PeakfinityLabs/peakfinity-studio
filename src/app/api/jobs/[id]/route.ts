@@ -5,6 +5,8 @@ import { fal } from "@/lib/fal/client";
 import { falErrorMessage, isFalValidationError } from "@/lib/fal/errors";
 import { canViewJob } from "@/lib/job-visibility";
 import { completeJob, failJob, maybeRunVoiceChain } from "@/lib/jobs/complete";
+import { refreshOmnirouterJob } from "@/lib/jobs/omnirouter-jobs";
+import { isOmnirouterEndpoint } from "@/lib/omnirouter";
 import { parseJobInput } from "@/lib/jobs/types";
 import { parseVoicePlan } from "@/lib/voice/revoice";
 import { deleteFromR2 } from "@/lib/r2";
@@ -47,7 +49,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   // Polling fallback: webhooks can't reach localhost, and a missed webhook in
   // prod should not strand a job. Any open job gets a live status check.
-  if ((OPEN_STATUSES as readonly string[]).includes(job.status) && job.falRequestId) {
+  // Veo 3.1 / Omni Flash: omnirouter has no webhooks — poll it here.
+  const isOmnirouter = isOmnirouterEndpoint(parseJobInput(job.input).endpoint);
+  if (isOmnirouter) {
+    await refreshOmnirouterJob(job);
+    job = (await loadJob(id))!;
+  }
+
+  if (
+    !isOmnirouter &&
+    (OPEN_STATUSES as readonly string[]).includes(job.status) &&
+    job.falRequestId
+  ) {
     const { endpoint } = parseJobInput(job.input);
     try {
       const status = await fal.queue.status(endpoint, {

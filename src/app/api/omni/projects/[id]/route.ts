@@ -4,6 +4,7 @@ import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { MAX_AVATARS, OMNI_ASPECT_RATIOS } from "@/lib/omni";
 import { findOwnProject, usableAvatarIds } from "@/lib/omni-server";
+import { refreshOmnirouterJob } from "@/lib/jobs/omnirouter-jobs";
 
 export const runtime = "nodejs";
 
@@ -27,8 +28,21 @@ export async function GET(_req: Request, { params }: Ctx) {
   });
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
+  const where = {
+    userId: me.id,
+    model: "OMNI_FLASH" as const,
+    input: { path: ["projectId"], equals: id },
+  };
+  // No provider webhooks: settle this project's open generations on each view.
+  const open = await prisma.job.findMany({
+    where: { ...where, status: { in: ["IN_QUEUE", "IN_PROGRESS"] } },
+    select: { id: true, status: true, falRequestId: true, input: true },
+    take: 10,
+  });
+  await Promise.all(open.map((j) => refreshOmnirouterJob(j).catch(() => undefined)));
+
   const generations = await prisma.job.findMany({
-    where: { userId: me.id, model: "OMNI_FLASH", input: { path: ["projectId"], equals: id } },
+    where,
     include: { assets: { where: { kind: "OUTPUT" } } },
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -60,6 +74,7 @@ export async function GET(_req: Request, { params }: Ctx) {
         duration: input.params?.duration ?? null,
         createdAt: job.createdAt,
         outputUrl: job.assets.find((a) => a.contentType.startsWith("video/"))?.url ?? null,
+        errorMessage: job.errorMessage,
       };
     }),
   });

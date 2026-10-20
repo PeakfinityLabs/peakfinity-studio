@@ -4,11 +4,9 @@ import { z } from "zod";
 // Extend clips, named avatars for character consistency, timeline stitching).
 // Client-safe: shared by the workspace UI and the API routes.
 //
-// The Omni Flash API is NOT connected yet: generation requests are validated and
-// saved as queued OMNI_FLASH jobs (admins see them in the Library) but nothing
-// is sent to any provider.
+// Generations run on Omni Flash 1.1 via omnirouter (lib/omnirouter.ts), 720p.
 
-export const OMNI_ENDPOINT = "not-connected/omni-flash";
+export const OMNI_ENDPOINT = "omnirouter/omni-flash";
 
 export const OMNI_MODES = ["create", "animate", "edit", "extend"] as const;
 export type OmniMode = (typeof OMNI_MODES)[number];
@@ -24,18 +22,23 @@ export const OMNI_MODE_INFO: Record<OmniMode, { label: string; help: string }> =
   },
   edit: {
     label: "Edit",
-    help: "Change an uploaded video in plain language (last 10s are used). Up to 3 reference images.",
+    help: "Change an uploaded MP4 in plain language — the last 10s are edited.",
   },
   extend: {
     label: "Extend",
-    help: "Continue a clip from this project — describe only what happens next.",
+    help: "Re-generate from a timeline clip (its last 10s) — describe what happens next.",
   },
 };
 
 export const OMNI_ASPECT_RATIOS = ["9:16", "16:9"] as const;
-export const OMNI_DURATIONS = ["3", "4", "5", "6", "7", "8", "9", "10"] as const;
-export const OMNI_RESOLUTIONS = ["720p", "1080p"] as const;
-export const MAX_INGREDIENTS = { create: 7, edit: 3 } as const;
+// Provider limits (Omni Flash 1.1): 4/6/8/10s, 720p on the purchased plan,
+// ≤7 reference images (avatars + ingredients combined). Edit/Extend use the
+// last ≤10s of the source video and take no reference images.
+export const OMNI_DURATIONS = ["4", "6", "8", "10"] as const;
+export const OMNI_RESOLUTIONS = ["720p"] as const;
+export const MAX_INGREDIENTS = { create: 7, edit: 0 } as const;
+export const MAX_REFERENCE_IMAGES = 7; // provider docs: Omni 1.1 Flash takes ≤7
+export const MAX_SOURCE_VIDEO_SECONDS = 10;
 export const MAX_AVATARS = 3;
 export const MAX_CLIPS_PER_PROJECT = 40;
 
@@ -62,8 +65,8 @@ export const omniGenerateSchema = z
     if (p.mode === "animate" && !p.image_url) issue("Animate needs a photo");
     if (p.mode === "edit" && !p.video_url) issue("Edit needs a video");
     if (p.mode === "extend" && !p.source_clip_id) issue("Pick the clip to extend");
-    if (p.mode === "edit" && p.image_urls.length > MAX_INGREDIENTS.edit) {
-      issue(`Edit takes at most ${MAX_INGREDIENTS.edit} reference images`);
+    if (p.mode === "create" && p.image_urls.length + p.avatar_ids.length > MAX_REFERENCE_IMAGES) {
+      issue(`Avatars + ingredients can total at most ${MAX_REFERENCE_IMAGES} images`);
     }
   });
 
@@ -87,13 +90,16 @@ export function avatarImageUrl(id: string): string {
  * CDN, where uploads and generations live, or our own R2 media route. Anything
  * else is rejected so a clip URL can't make the server fetch arbitrary hosts.
  */
+const ALLOWED_CLIP_HOSTS = ["fal.media", "cdn.royaltechno.cc"];
+
 export function isAllowedClipUrl(raw: string): boolean {
   if (raw.startsWith("/api/media/outputs/") && !raw.includes("..")) return true;
   try {
     const u = new URL(raw);
-    return (
-      u.protocol === "https:" && (u.hostname === "fal.media" || u.hostname.endsWith(".fal.media"))
-    );
+    if (u.protocol !== "https:") return false;
+    // fal's CDN (uploads + fal outputs) and omnirouter's CDN (Veo / Omni
+    // outputs, used only if re-hosting to fal failed).
+    return ALLOWED_CLIP_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`));
   } catch {
     return false;
   }

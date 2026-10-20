@@ -61,8 +61,8 @@ export type ModelDef = {
   toFalInput: (params: ModelParams) => Record<string, unknown>;
   estimateCostCents: (params: ModelParams) => number;
   costNote: string;
-  /** API not hooked up yet: requests are saved as queued jobs and never sent to fal. */
-  notConnected?: true;
+  /** Submitted to omnirouter (Veo 3.1 / Omni Flash) instead of fal. */
+  provider?: "omnirouter";
 };
 
 export type ModelSlug = "nano-banana-2" | "gpt-image-2" | "kling-o3" | "seedance-2" | "veo-3";
@@ -336,48 +336,51 @@ const seedance2: ModelDef = {
   costNote: "≈$0.30/s at 720p · ×0.6 with video refs (token-based; estimate)",
 };
 
-// ─── Veo 3 (Google) — text/image-to-video · API NOT CONNECTED YET ──────────
-// Requests are validated and saved as queued jobs (visible in the Library) but
-// never submitted anywhere. Hook up the provider + pricing here later.
+// ─── Veo 3.1 Lite (Google, via omnirouter) — text/image-to-video, 720p ─────
+// Not on fal: submitted to omnirouter (lib/omnirouter.ts) with its own key.
+// Per the provider docs: always 8s, start/end frame supported, 720p fixed by
+// the purchased plan, native audio always on.
 
-const veo3Schema = z.object({
-  prompt: z.string().trim().min(1, "Prompt is required").max(5000),
-  image_url: url.optional(),
-  aspect_ratio: z.enum(["16:9", "9:16"]).default("9:16"),
-  duration: z.enum(["4s", "6s", "8s"]).default("8s"),
-  resolution: z.enum(["720p", "1080p"]).default("720p"),
-  generate_audio: z.boolean().default(true),
-  negative_prompt: z.string().trim().max(2000).optional(),
-  seed: z.coerce.number().int().optional(),
-});
+const VEO_DURATIONS = ["8"] as const;
+
+const veo3Schema = z
+  .object({
+    prompt: z.string().trim().min(1, "Prompt is required").max(5000),
+    image_url: url.optional(),
+    end_image_url: url.optional(),
+    aspect_ratio: z.enum(["16:9", "9:16"]).default("9:16"),
+    duration: z.enum(VEO_DURATIONS).default("8"),
+  })
+  .refine((p) => !p.end_image_url || p.image_url, {
+    message: "Add a start frame to use an end frame",
+  });
 
 const veo3: ModelDef = {
   slug: "veo-3",
   genModel: "VEO_3",
-  label: "Veo 3",
-  tagline: "Google video with native audio — dialogue, sound effects and music in one pass",
+  label: "Veo 3.1 Lite",
+  tagline: "Google video with native audio — dialogue, sound effects and music in one pass (720p)",
   type: "VIDEO",
   promptRequired: true,
   promptPlaceholder:
     "Describe the shot: subject, action, setting, camera, lighting and sound (put dialogue in quotes)…",
-  schema: veo3Schema,
+  schema: veo3Schema as z.ZodType<ModelParams>,
   fields: [
-    { kind: "select", name: "aspect_ratio", label: "Aspect ratio", options: ["16:9", "9:16"], optionLabels: ASPECT_RATIO_LABELS },
-    { kind: "select", name: "duration", label: "Duration", options: ["4s", "6s", "8s"] },
-    { kind: "select", name: "resolution", label: "Resolution", options: ["720p", "1080p"] },
-    { kind: "switch", name: "generate_audio", label: "Generate audio" },
-    { kind: "text", name: "negative_prompt", label: "Negative prompt", help: "Optional — what to avoid" },
-    { kind: "number", name: "seed", label: "Seed", min: 0, max: 2147483647, help: "Optional — for reproducibility" },
+    { kind: "select", name: "aspect_ratio", label: "Aspect ratio", options: ["9:16", "16:9"], optionLabels: ASPECT_RATIO_LABELS },
+    { kind: "select", name: "duration", label: "Duration (s)", options: VEO_DURATIONS, help: "Veo 3.1 clips are always 8s" },
   ],
   uploaders: [
     { name: "image_url", label: "Start frame (optional — animates this image)", accept: "image/*", max: 1, single: true },
+    { name: "end_image_url", label: "End frame (optional — needs a start frame)", accept: "image/*", max: 1, single: true },
   ],
-  defaults: { aspect_ratio: "9:16", duration: "8s", resolution: "720p", generate_audio: true },
-  resolveEndpoint: () => "not-connected/veo-3",
+  defaults: { aspect_ratio: "9:16", duration: "8" },
+  resolveEndpoint: () => "omnirouter/veo-3-1",
   toFalInput: stripEmpty,
-  estimateCostCents: () => 0, // ponytail: pricing lands with the API hookup
-  costNote: "API not connected yet — requests are saved, not run",
-  notConnected: true,
+  // Measured: an 8s 720p job billed $0.03. The provider's actual per-job cost
+  // replaces this estimate when the job settles.
+  estimateCostCents: () => 3,
+  costNote: "≈$0.03 per 8s clip · 720p · billed at the provider's actual cost",
+  provider: "omnirouter",
 };
 
 // ─── Registry ────────────────────────────────────────────────────────────────
@@ -407,10 +410,9 @@ export function formatCents(cents: number): string {
 export const KLING_LIPSYNC_LABEL = "Voice change (lip-sync)";
 export const VOICE_SWAP_LABEL = "Voice swap";
 /** Omni Zone generations — made inside an Omni project, not a studio page. */
-export const OMNI_FLASH_LABEL = "Omni Flash";
+export const OMNI_FLASH_LABEL = "Omni Flash 1.1";
 
-/** Models whose API isn't hooked up yet: their jobs stay queued and never poll fal. */
-export const NOT_CONNECTED_GEN_MODELS: readonly string[] = ["VEO_3", "OMNI_FLASH"];
+
 
 /** Display label for any GenModel, including non-studio ones. */
 export function labelForGenModel(genModel: string): string {

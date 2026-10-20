@@ -13,13 +13,17 @@ export type SecretName =
   | "FAL_KEY"
   | "ANTHROPIC_API_KEY"
   | "ELEVENLABS_API_KEY"
-  | "RESEND_API_KEY";
+  | "RESEND_API_KEY"
+  | "VEO_API_KEY"
+  | "OMNI_FLASH_API_KEY";
 
 export const SECRET_CATALOG: { name: SecretName; label: string; help: string }[] = [
   { name: "FAL_KEY", label: "fal.ai", help: "Image & video generation (Nano Banana, Kling, Seedance)" },
   { name: "ANTHROPIC_API_KEY", label: "Anthropic (Claude)", help: "Prompt optimizer" },
   { name: "ELEVENLABS_API_KEY", label: "ElevenLabs", help: "Voice cloning, import & swap" },
   { name: "RESEND_API_KEY", label: "Resend", help: "Password-reset emails (optional)" },
+  { name: "VEO_API_KEY", label: "Veo 3.1 Lite (omnirouter)", help: "Veo studio model — api.webinhour.com" },
+  { name: "OMNI_FLASH_API_KEY", label: "Omni Flash 1.1 (omnirouter)", help: "Omni Zone generations — api.webinhour.com" },
 ];
 
 const CATALOG_NAMES = new Set(SECRET_CATALOG.map((s) => s.name));

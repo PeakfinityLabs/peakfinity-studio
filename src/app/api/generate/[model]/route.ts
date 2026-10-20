@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fal, falWebhookUrl } from "@/lib/fal/client";
+import { modelFromEndpoint, submitJob, toAspect } from "@/lib/omnirouter";
 import { isModelSlug, MODELS } from "@/lib/models/registry";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { engineAvailable } from "@/lib/voice/providers";
@@ -127,10 +128,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
   // The studio form still shows the combined figure pre-submit.
   const estimatedCostCents = def.estimateCostCents(modelParams);
 
-  // Models without a hooked-up API (Veo 3) are saved as queued jobs only —
-  // nothing is sent to fal.
+  // Veo 3.1 goes to omnirouter with its own key; everything else to fal.
+  // (falRequestId holds whichever provider's job id.)
   let falRequestId: string | null = null;
-  if (!def.notConnected) {
+  if (def.provider === "omnirouter") {
+    try {
+      const submitted = await submitJob(modelFromEndpoint(endpoint), {
+        prompt: String(modelParams.prompt),
+        aspect_ratio: toAspect(modelParams.aspect_ratio),
+        duration_sec: Number(modelParams.duration),
+        ...(typeof modelParams.image_url === "string"
+          ? { start_image_url: modelParams.image_url }
+          : {}),
+        ...(typeof modelParams.end_image_url === "string"
+          ? { end_image_url: modelParams.end_image_url }
+          : {}),
+      });
+      falRequestId = submitted.id;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "submission failed";
+      return NextResponse.json({ error: `${def.label} rejected the request: ${message}` }, { status: 502 });
+    }
+  } else {
     try {
       const submitted = await fal.queue.submit(endpoint, {
         input: falInput,
