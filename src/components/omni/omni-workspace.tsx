@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ReferenceUploader } from "@/components/studio/reference-uploader";
 import { NewAvatarDialog, useAvatars } from "@/components/omni/avatar-library";
 import { ClipEditor } from "@/components/omni/clip-editor";
+import { PreviewDialog, type PreviewItem } from "@/components/omni/preview-dialog";
 import { fetchJson } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import {
@@ -88,6 +89,7 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [playingAll, setPlayingAll] = useState<number | null>(null);
+  const [preview, setPreview] = useState<PreviewItem | null>(null);
   const [uploading, setUploading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -497,17 +499,37 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                           editingId === clip.id && "ring-2 ring-foreground"
                         )}
                       >
-                        {/* #t=0.1 makes browsers paint a first frame as the thumbnail */}
-                        <video
-                          src={`${clip.url}#t=0.1`}
-                          muted
-                          playsInline
-                          preload="metadata"
-                          className={cn(
-                            "w-full object-cover",
-                            portrait ? "aspect-[9/16]" : "aspect-video"
-                          )}
-                        />
+                        <button
+                          type="button"
+                          aria-label={`Preview clip ${i + 1}`}
+                          className="group/preview block w-full"
+                          onClick={() =>
+                            setPreview({
+                              url: clip.url,
+                              title: `Clip ${i + 1}: ${clip.label}`,
+                              subtitle:
+                                clip.trimStart > 0 || clip.trimEnd !== null
+                                  ? `Trimmed ${clip.trimStart.toFixed(1)}–${clip.trimEnd === null ? "end" : `${clip.trimEnd.toFixed(1)}s`} — plays the kept part`
+                                  : undefined,
+                              trimStart: clip.trimStart,
+                              trimEnd: clip.trimEnd,
+                              downloadHref: `/api/omni/projects/${projectId}/clips/${clip.id}/download`,
+                            })
+                          }
+                        >
+                          {/* #t= paints the clip's first kept frame as the thumbnail */}
+                          <video
+                            src={`${clip.url}#t=${Math.max(clip.trimStart, 0.1)}`}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className={cn(
+                              "pointer-events-none w-full object-cover",
+                              portrait ? "aspect-[9/16]" : "aspect-video"
+                            )}
+                          />
+                          <PlayBadge />
+                        </button>
                         <span className="absolute top-1 left-1 rounded bg-background/85 px-1.5 font-mono text-[10px]">
                           {i + 1}
                         </span>
@@ -629,15 +651,41 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                 <ul className="divide-y">
                   {generations.map((g) => (
                     <li key={g.id} className="flex items-center gap-3 py-2.5">
-                      <div className="flex h-12 w-20 shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
+                      <div
+                        className={cn(
+                          "flex shrink-0 items-center justify-center overflow-hidden rounded bg-muted",
+                          portrait ? "h-24 w-14" : "h-14 w-24"
+                        )}
+                      >
                         {g.outputUrl ? (
-                          <video
-                            src={`${g.outputUrl}#t=0.1`}
-                            muted
-                            playsInline
-                            preload="metadata"
-                            className="h-full w-full object-cover"
-                          />
+                          <button
+                            type="button"
+                            aria-label="Preview generation"
+                            className="group/preview relative h-full w-full"
+                            onClick={() =>
+                              setPreview({
+                                url: g.outputUrl!,
+                                title: g.prompt,
+                                subtitle: `${OMNI_MODE_INFO[g.mode as OmniMode]?.label ?? g.mode} · ${new Date(g.createdAt).toLocaleString()}`,
+                                downloadHref: g.outputUrl!,
+                                onInsert: () =>
+                                  void api(
+                                    "/clips",
+                                    { method: "POST", body: JSON.stringify({ jobId: g.id }) },
+                                    "Inserted into timeline"
+                                  ),
+                              })
+                            }
+                          >
+                            <video
+                              src={`${g.outputUrl}#t=0.1`}
+                              muted
+                              playsInline
+                              preload="metadata"
+                              className="pointer-events-none h-full w-full object-cover"
+                            />
+                            <PlayBadge />
+                          </button>
                         ) : (
                           <span className="text-[10px] text-muted-foreground">no video</span>
                         )}
@@ -927,6 +975,8 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
         </Card>
       </div>
 
+      <PreviewDialog item={preview} portrait={portrait} onClose={() => setPreview(null)} />
+
       <NewAvatarDialog
         open={avatarDialogOpen}
         onOpenChange={setAvatarDialogOpen}
@@ -936,5 +986,16 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
         }}
       />
     </div>
+  );
+}
+
+/** Play icon over a thumbnail; brightens on hover. */
+function PlayBadge() {
+  return (
+    <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/10 transition-colors group-hover/preview:bg-black/30">
+      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-background/85 pl-0.5 text-xs text-foreground shadow">
+        ▶
+      </span>
+    </span>
   );
 }
