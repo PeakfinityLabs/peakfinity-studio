@@ -190,6 +190,9 @@ export function buildConcatArgs(
     "[v]",
     "-map",
     "[a]",
+    // Few threads keep x264's frame buffers small on a 512 MB instance.
+    "-threads",
+    "2",
     "-c:v",
     "libx264",
     "-preset",
@@ -228,15 +231,47 @@ export async function stitchClips(
       files.push(file);
       info.push(await probe(file));
     }
-    const resolved = segments.map((seg) => {
+    // One ffmpeg pass per segment, then a stream-copy join. A single pass over
+    // every clip decodes them all at once and blew past the 512 MB instance
+    // (Render killed it → 502). Segments share codec/size/fps/audio format,
+    // so the concat demuxer joins them without re-encoding.
+    const canvas = exportCanvas(aspectRatio);
+    const opts = { maxBuffer: 16 * 1024 * 1024, timeout: 10 * 60_000 };
+    const parts: string[] = [];
+    for (const [i, seg] of segments.entries()) {
       const input = sources.indexOf(seg.url);
-      return { input, hasAudio: info[input].hasAudio, ...resolveTrim(seg, info[input].seconds) };
-    });
+      const part = path.join(dir, `part-${i}.mp4`);
+      const resolved = {
+        input: 0,
+        hasAudio: info[input].hasAudio,
+        ...resolveTrim(seg, info[input].seconds),
+      };
+      await run(ffmpegPath, buildConcatArgs([resolved], [files[input]], canvas, part), opts);
+      parts.push(part);
+    }
+    if (parts.length === 1) return { file: parts[0], cleanup };
+    const list = path.join(dir, "parts.txt");
+    await writeFile(list, parts.map((f) => `file '${f}'`).join("\n"));
     const out = path.join(dir, "out.mp4");
-    await run(ffmpegPath, buildConcatArgs(resolved, files, exportCanvas(aspectRatio), out), {
-      maxBuffer: 16 * 1024 * 1024,
-      timeout: 10 * 60_000,
-    });
+    await run(
+      ffmpegPath,
+      [
+        "-hide_banner",
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        list,
+        "-c",
+        "copy",
+        "-movflags",
+        "+faststart",
+        out,
+      ],
+      opts
+    );
     return { file: out, cleanup };
   } catch (error) {
     await cleanup();
