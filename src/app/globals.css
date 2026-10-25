@@ -237,3 +237,103 @@
     border-color: oklch(0.16 0 0 / 0.28);
   }
 }
+
+/*
+ * Jarvis theme — opt-in HUD look (navy + cyan glow), toggled from the header
+ * and stored in localStorage ("studio-theme"). The default theme above is
+ * untouched; this only overrides tokens when <html data-theme="jarvis">.
+ */
+[data-theme="jarvis"] {
+  --background: #050b14;
+  --foreground: #e6f4ff;
+  --card: rgb(10 26 44 / 0.78);
+  --card-foreground: #e6f4ff;
+  --elevated: #0f2439;
+  --popover: #0a1828;
+  --popover-foreground: #e6f4ff;
+  --primary: #00d4ff;
+  --primary-foreground: #031019;
+  --secondary: #0d2034;
+  --secondary-foreground: #e6f4ff;
+  --muted: #0d2034;
+  --muted-foreground: #8fa8c2;
+  --accent: rgb(0 212 255 / 0.12);
+  --accent-foreground: #e6f4ff;
+  --destructive: #ff4d5e;
+  --border: rgb(0 212 255 / 0.22);
+  --input: rgb(0 212 255 / 0.28);
+  --ring: #00d4ff;
+  --chart-1: #00d4ff;
+  --chart-2: #22e58b;
+  --chart-3: #ffb020;
+  --chart-4: #a970ff;
+  --chart-5: #ff4d5e;
+  --radius: 0.625rem;
+  --sidebar: #0a1828;
+  --sidebar-foreground: #e6f4ff;
+  --sidebar-primary: #00d4ff;
+  --sidebar-primary-foreground: #031019;
+  --sidebar-accent: rgb(0 212 255 / 0.12);
+  --sidebar-accent-foreground: #e6f4ff;
+  --sidebar-border: rgb(0 212 255 / 0.22);
+  --sidebar-ring: #00d4ff;
+  color-scheme: dark;
+}
+[data-theme="jarvis"] body {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgb(0 150 199 / 0.18), transparent 70%),
+    #050b14;
+  background-attachment: fixed;
+}
+/* Faint HUD grid instead of film grain */
+[data-theme="jarvis"] .grain::before {
+  opacity: 1;
+  mix-blend-mode: normal;
+  background-image:
+    linear-gradient(rgb(0 212 255 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(0 212 255 / 0.035) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+/* Panels: cyan hairline + soft glow */
+[data-theme="jarvis"] [data-slot="card"] {
+  --tw-ring-color: rgb(0 212 255 / 0.32);
+  border-color: rgb(0 212 255 / 0.32);
+  backdrop-filter: blur(6px);
+  box-shadow:
+    0 0 0 1px rgb(0 212 255 / 0.28),
+    0 0 22px rgb(0 212 255 / 0.12),
+    inset 0 0 24px rgb(0 212 255 / 0.05);
+}
+[data-theme="jarvis"] .lift:hover {
+  border-color: rgb(0 212 255 / 0.6);
+  box-shadow: 0 0 14px rgb(0 212 255 / 0.25);
+}
+/* Display type glows cyan; eyebrow labels pick up the accent */
+[data-theme="jarvis"] .text-display {
+  color: #e6f4ff;
+  text-shadow: 0 0 10px rgb(0 212 255 / 0.35);
+}
+[data-theme="jarvis"] .label-mono {
+  color: #5fe6ff;
+}
+[data-theme="jarvis"] ::selection {
+  background: rgb(0 212 255 / 0.85);
+  color: #031019;
+}
+[data-theme="jarvis"] .glow-hero::before {
+  background: radial-gradient(60% 100% at 50% 0%, rgb(0 212 255 / 0.16) 0%, transparent 70%);
+}
+/* Primary buttons / active nav pill glow */
+[data-theme="jarvis"] .bg-primary,
+[data-theme="jarvis"] .bg-foreground {
+  box-shadow: 0 0 12px rgb(0 212 255 / 0.45);
+}
+[data-theme="jarvis"] .bg-foreground {
+  background-color: #00d4ff;
+  color: #031019;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="jarvis"] * {
+    transition: none !important;
+  }
+}

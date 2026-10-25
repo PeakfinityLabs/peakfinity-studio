@@ -9,6 +9,16 @@ import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import { isAllowedClipUrl } from "../src/lib/omni";
 import { resolveTrim, stitchClips } from "../src/lib/omni-server";
+import { videoSeconds } from "../src/lib/jobs/complete";
+import { formatSeconds } from "../src/lib/models/registry";
+
+// Usage seconds: provider-reported length wins, then fal's, then the requested duration.
+const vid = (duration: unknown) => ({ type: "VIDEO", input: { params: { duration } } });
+assert.equal(videoSeconds(vid("8"), { output: { duration_sec: 8.04 } }), 8.04);
+assert.equal(videoSeconds(vid("5"), { video: { url: "x" } }), 5);
+assert.equal(videoSeconds(vid("auto"), { video: { url: "x" } }), null);
+assert.equal(videoSeconds({ type: "IMAGE", input: {} }, { images: [] }), null);
+assert.equal(formatSeconds(1234.6), "1,235s");
 
 const run = promisify(execFile);
 

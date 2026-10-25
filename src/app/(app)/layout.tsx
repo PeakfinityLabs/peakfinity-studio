@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { MainNav } from "@/components/app/main-nav";
+import { ThemeToggle } from "@/components/app/theme-toggle";
 import { SignOutItem } from "@/components/app/sign-out-item";
 import { Wordmark } from "@/components/brand/wordmark";
 import {
@@ -38,7 +39,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="ml-2">
             <MainNav isAdmin={isAdmin} pendingCount={pendingCount} />
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={

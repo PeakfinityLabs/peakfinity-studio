@@ -39,6 +39,8 @@ export const OMNI_RESOLUTIONS = ["720p"] as const;
 export const MAX_INGREDIENTS = { create: 7, edit: 0 } as const;
 export const MAX_REFERENCE_IMAGES = 7; // provider docs: Omni 1.1 Flash takes ≤7
 export const MAX_SOURCE_VIDEO_SECONDS = 10;
+/** Omni Flash is billed internally at a flat $0.02 per generated second. */
+export const OMNI_CENTS_PER_SECOND = 2;
 export const MAX_AVATARS = 3;
 export const MAX_CLIPS_PER_PROJECT = 40;
 

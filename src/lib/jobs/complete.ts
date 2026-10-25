@@ -62,6 +62,18 @@ function guessExtension(contentType: string | undefined, url: string): string {
  * webhook + poller calls are safe. Callable from both the webhook handler and
  * the polling fallback (local dev never receives webhooks).
  */
+/** Seconds of video a completed job produced: the output's reported length, else the requested duration. */
+export function videoSeconds(job: { type: string; input: unknown }, payload: unknown): number | null {
+  if (job.type !== "VIDEO") return null;
+  const p = payload as { output?: { duration_sec?: unknown }; video?: { duration?: unknown } } | null;
+  const params = (job.input as { params?: { duration?: unknown } } | null)?.params;
+  for (const v of [p?.output?.duration_sec, p?.video?.duration, params?.duration]) {
+    const n = Number(v);
+    if (v !== null && v !== undefined && Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
 export async function completeJob(jobId: string, payload: unknown): Promise<void> {
   // Claim the completion: only one caller wins this update.
   const claimed = await prisma.job.updateMany({
@@ -130,6 +142,7 @@ export async function completeJob(jobId: string, payload: unknown): Promise<void
         jobId,
         model: job.model,
         costCents: job.estimatedCostCents,
+        seconds: videoSeconds(job, payload),
       },
     }),
   ]);

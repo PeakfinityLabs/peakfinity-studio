@@ -6,8 +6,10 @@ import type { GenModel } from "@/generated/prisma/enums";
 export type UsageSummary = {
   totalCents: number;
   eventCount: number;
-  byModel: Array<{ model: GenModel; costCents: number; count: number }>;
-  byUser: Array<{ userId: string; name: string; costCents: number; count: number }>;
+  /** Seconds of video generated. */
+  totalSeconds: number;
+  byModel: Array<{ model: GenModel; costCents: number; count: number; seconds: number }>;
+  byUser: Array<{ userId: string; name: string; costCents: number; count: number; seconds: number }>;
   /** True when a private-library account's row was withheld from byUser. */
   hasWithheldUsers: boolean;
 };
@@ -30,18 +32,18 @@ export async function getUsageSummary(
     : {};
 
   const [total, byModel, byUser] = await Promise.all([
-    prisma.usageEvent.aggregate({ where, _sum: { costCents: true }, _count: true }),
+    prisma.usageEvent.aggregate({ where, _sum: { costCents: true, seconds: true }, _count: true }),
     prisma.usageEvent.groupBy({
       by: ["model"],
       where,
-      _sum: { costCents: true },
+      _sum: { costCents: true, seconds: true },
       _count: true,
       orderBy: { _sum: { costCents: "desc" } },
     }),
     prisma.usageEvent.groupBy({
       by: ["userId"],
       where,
-      _sum: { costCents: true },
+      _sum: { costCents: true, seconds: true },
       _count: true,
       orderBy: { _sum: { costCents: "desc" } },
     }),
@@ -68,16 +70,19 @@ export async function getUsageSummary(
   return {
     totalCents: total._sum.costCents ?? 0,
     eventCount: total._count,
+    totalSeconds: total._sum.seconds ?? 0,
     byModel: byModel.map((row) => ({
       model: row.model,
       costCents: row._sum.costCents ?? 0,
       count: row._count,
+      seconds: row._sum.seconds ?? 0,
     })),
     byUser: visibleByUser.map((row) => ({
       userId: row.userId,
       name: userById.get(row.userId)?.name ?? "Unknown",
       costCents: row._sum.costCents ?? 0,
       count: row._count,
+      seconds: row._sum.seconds ?? 0,
     })),
     hasWithheldUsers,
   };

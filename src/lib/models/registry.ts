@@ -415,6 +415,11 @@ export const OMNI_FLASH_LABEL = "Omni Flash 1.1";
 
 
 /** Display label for any GenModel, including non-studio ones. */
+/** 1234.5 → "1,235s" — seconds of generated video. */
+export function formatSeconds(seconds: number): string {
+  return `${Math.round(seconds).toLocaleString("en-US")}s`;
+}
+
 export function labelForGenModel(genModel: string): string {
   if (genModel === "KLING_LIPSYNC") return KLING_LIPSYNC_LABEL;
   if (genModel === "VOICE_SWAP") return VOICE_SWAP_LABEL;

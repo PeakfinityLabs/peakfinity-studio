@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getSessionUser, isAdminEmail } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { getUsageSummary } from "@/lib/usage";
-import { formatCents } from "@/lib/models/registry";
+import { formatCents, formatSeconds } from "@/lib/models/registry";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminUsers } from "@/components/admin/admin-users";
 import { AdminSecrets } from "@/components/admin/admin-secrets";
@@ -55,6 +55,7 @@ export default async function AdminPage() {
     { label: "Admins", value: String(adminCount) },
     { label: "Total spend", value: formatCents(usage.totalCents) },
     { label: "Generations", value: String(usage.eventCount) },
+    { label: "Seconds", value: formatSeconds(usage.totalSeconds) },
   ];
 
   const rows = users.map((u) => ({
@@ -92,7 +93,7 @@ export default async function AdminPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {stats.map((s) => (
           <Card key={s.label}>
             <CardHeader className="pb-2">

@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCents, labelForGenModel } from "@/lib/models/registry";
+import { formatCents, formatSeconds, labelForGenModel } from "@/lib/models/registry";
 import { getUsageSummary } from "@/lib/usage";
 
 export const metadata = { title: "Usage — Peakfinity Studio" };
@@ -64,7 +64,7 @@ export default async function UsagePage({
         </nav>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle className="label-mono font-normal">Total estimated spend</CardTitle>
@@ -79,6 +79,14 @@ export default async function UsagePage({
           </CardHeader>
           <CardContent>
             <p className="text-display text-4xl tabular-nums">{summary.eventCount}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="label-mono font-normal">Video generated</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-display text-4xl tabular-nums">{formatSeconds(summary.totalSeconds)}</p>
           </CardContent>
         </Card>
       </div>
@@ -97,6 +105,7 @@ export default async function UsagePage({
                   <TableRow>
                     <TableHead>Model</TableHead>
                     <TableHead className="text-right">Generations</TableHead>
+                    <TableHead className="text-right">Seconds</TableHead>
                     <TableHead className="text-right">Spend</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -105,6 +114,9 @@ export default async function UsagePage({
                     <TableRow key={row.model}>
                       <TableCell>{modelLabel(row.model)}</TableCell>
                       <TableCell className="text-right">{row.count}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {row.seconds ? formatSeconds(row.seconds) : "—"}
+                      </TableCell>
                       <TableCell className="text-right">{formatCents(row.costCents)}</TableCell>
                     </TableRow>
                   ))}
@@ -127,6 +139,7 @@ export default async function UsagePage({
                   <TableRow>
                     <TableHead>Editor</TableHead>
                     <TableHead className="text-right">Generations</TableHead>
+                    <TableHead className="text-right">Seconds</TableHead>
                     <TableHead className="text-right">Spend</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -135,6 +148,9 @@ export default async function UsagePage({
                     <TableRow key={row.userId}>
                       <TableCell>{row.name}</TableCell>
                       <TableCell className="text-right">{row.count}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {row.seconds ? formatSeconds(row.seconds) : "—"}
+                      </TableCell>
                       <TableCell className="text-right">{formatCents(row.costCents)}</TableCell>
                     </TableRow>
                   ))}

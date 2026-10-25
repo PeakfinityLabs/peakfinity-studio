@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { OMNI_ENDPOINT, omniGenerateSchema } from "@/lib/omni";
+import { OMNI_ENDPOINT, omniGenerateSchema, OMNI_CENTS_PER_SECOND } from "@/lib/omni";
 import { findOwnProject, visibleAvatarsWhere } from "@/lib/omni-server";
 import { submitJob, toAspect, type OmnirouterInput } from "@/lib/omnirouter";
 import { MAX_SOURCE_VIDEO_SECONDS } from "@/lib/omni";
@@ -94,6 +94,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     aspect_ratio: toAspect(rest.aspect_ratio),
   };
   let providerInput: OmnirouterInput;
+  // Seconds of video this job produces — drives the $0.02/s cost and usage seconds.
+  let seconds = Number(rest.duration);
   try {
     if (rest.mode === "create") {
       // Avatar images live in our DB behind auth, so send them inline.
@@ -119,6 +121,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         MAX_SOURCE_VIDEO_SECONDS,
         project.aspectRatio
       );
+      seconds = Math.max(1, Math.round(window.trimEnd - window.trimStart));
       providerInput = {
         ...base,
         reference_video_url: window.url,
@@ -155,7 +158,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       falRequestId: remoteId,
       input: {
         endpoint: OMNI_ENDPOINT,
-        params: modeParams,
+        params: { ...modeParams, duration: String(seconds) },
         mode: rest.mode,
         projectId: id,
         projectName: project.name,
@@ -163,8 +166,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         ...(sourceClip ? { sourceClipId: sourceClip.id } : {}),
       } as Prisma.InputJsonValue,
       prompt: rest.prompt,
-      // Replaced by the provider's real cost when the job settles.
-      estimatedCostCents: Math.max(1, Math.round(Number(rest.duration) * 0.375)),
+      estimatedCostCents: seconds * OMNI_CENTS_PER_SECOND,
       assets: {
         create: inputUrls.map((url) => ({
           kind: "INPUT" as const,

@@ -969,7 +969,7 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
               {missing ??
                 (mode === "edit" || mode === "extend"
                   ? "Omni Flash 1.1 · edits the last 10s of the clip"
-                  : "Omni Flash 1.1 · ≈$0.03 per 8s clip")}
+                  : "Omni Flash 1.1 · $0.02/s ($0.16 per 8s clip)")}
             </p>
           </CardContent>
         </Card>
