@@ -6,13 +6,14 @@ import { formatCents, formatSeconds } from "@/lib/models/registry";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminUsers } from "@/components/admin/admin-users";
 import { AdminSecrets } from "@/components/admin/admin-secrets";
+import { AdminStoreItems } from "@/components/admin/admin-store-items";
 
 export const metadata = { title: "Admin — Peakfinity Studio" };
 
 export default async function AdminPage() {
   const me = (await getSessionUser())!;
 
-  const [users, counts, usage, resetRequests] = await Promise.all([
+  const [users, counts, usage, resetRequests, storeItems] = await Promise.all([
     prisma.user.findMany({
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
       select: {
@@ -39,6 +40,10 @@ export default async function AdminPage() {
         expiresAt: { gt: new Date() },
       },
       select: { userId: true, createdAt: true },
+    }),
+    prisma.rewardItem.findMany({
+      orderBy: [{ active: "desc" }, { costPoints: "asc" }],
+      include: { _count: { select: { redemptions: true } } },
     }),
   ]);
   const resetRequestByUser = new Map(
@@ -107,6 +112,18 @@ export default async function AdminPage() {
       </div>
 
       <AdminUsers users={rows} />
+
+      <AdminStoreItems
+        items={storeItems.map((i) => ({
+          id: i.id,
+          name: i.name,
+          description: i.description,
+          kind: i.kind,
+          costPoints: i.costPoints,
+          active: i.active,
+          redemptions: i._count.redemptions,
+        }))}
+      />
 
       <AdminSecrets />
     </div>

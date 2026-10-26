@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
-import { normName, syncRewards } from "@/lib/rewards";
+import { normName, prestige, redeemItem, RewardsError, syncRewards } from "@/lib/rewards";
 
 export const runtime = "nodejs";
 
@@ -22,6 +22,8 @@ const actionSchema = z.discriminatedUnion("action", [
     active: z.boolean(),
   }),
   z.object({ action: z.literal("redeem"), userId: id, itemId: id }),
+  z.object({ action: z.literal("delete-item"), itemId: id }),
+  z.object({ action: z.literal("prestige"), userId: id }),
   z.object({ action: z.literal("redemption"), redemptionId: id, op: z.enum(["fulfill", "reject"]) }),
   z.object({
     action: z.literal("points"),
@@ -106,21 +108,20 @@ export async function POST(req: Request) {
       }
 
       case "redeem":
-        await prisma.$transaction(async (tx) => {
-          // Serialise spends per editor so two redemptions can't both pass the balance check.
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${body.userId}))`;
-          const item = await tx.rewardItem.findUnique({ where: { id: body.itemId } });
-          if (!item || !item.active) throw new UserError("That reward isn't available");
-          const balance = (await tx.pointsEntry.aggregate({ where: { userId: body.userId }, _sum: { delta: true } }))._sum.delta ?? 0;
-          if (balance < item.costPoints) throw new UserError(`Not enough points (${balance} of ${item.costPoints})`);
-          await tx.redemption.create({
-            data: { userId: body.userId, itemId: item.id, itemName: item.name, costPoints: item.costPoints },
-          });
-          await tx.pointsEntry.create({
-            data: { userId: body.userId, delta: -item.costPoints, reason: `Redeemed: ${item.name}`, createdBy: me.email },
-          });
-        });
+        await redeemItem(body.userId, body.itemId, me.email);
         break;
+
+      case "prestige":
+        await prestige(body.userId);
+        break;
+
+      case "delete-item": {
+        // Items someone already redeemed are kept (history) and just hidden.
+        const used = await prisma.redemption.count({ where: { itemId: body.itemId } });
+        if (used) await prisma.rewardItem.update({ where: { id: body.itemId }, data: { active: false } });
+        else await prisma.rewardItem.delete({ where: { id: body.itemId } });
+        return NextResponse.json({ ok: true, hidden: used > 0 });
+      }
 
       case "redemption": {
         const r = await prisma.redemption.findUnique({ where: { id: body.redemptionId } });
@@ -148,7 +149,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof UserError) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error instanceof UserError || error instanceof RewardsError) return NextResponse.json({ error: error.message }, { status: 400 });
     if ((error as { code?: string }).code === "P2025") {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

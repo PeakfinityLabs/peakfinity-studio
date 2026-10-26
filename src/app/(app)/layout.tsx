@@ -3,6 +3,8 @@ import { getSessionUser } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { MainNav } from "@/components/app/main-nav";
 import { ThemeToggle } from "@/components/app/theme-toggle";
+import { LevelBar } from "@/components/rewards/level-bar";
+import { userProgress } from "@/lib/rewards";
 import { SignOutItem } from "@/components/app/sign-out-item";
 import { Wordmark } from "@/components/brand/wordmark";
 import {
@@ -28,7 +30,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (me.status !== "APPROVED") redirect("/pending");
 
   const isAdmin = me.role === "ADMIN";
-  const pendingCount = isAdmin ? await prisma.user.count({ where: { status: "PENDING" } }) : 0;
+  const [pendingCount, progress] = await Promise.all([
+    isAdmin ? prisma.user.count({ where: { status: "PENDING" } }) : 0,
+    // The level bar must never take the app down with it.
+    userProgress(me.id).catch((error) => {
+      console.error("[rewards] level bar:", error instanceof Error ? error.message : error);
+      return null;
+    }),
+  ]);
   const displayName = me.name ?? me.email;
 
   return (
@@ -78,7 +87,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10">{children}</main>
+      {progress && <LevelBar progress={progress} href={isAdmin ? "/store" : undefined} />}
+      <main className={`mx-auto w-full max-w-6xl flex-1 px-4 ${progress ? "pt-4 pb-10" : "py-10"}`}>{children}</main>
       <Toaster />
     </div>
   );

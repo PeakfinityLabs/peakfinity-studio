@@ -20,21 +20,87 @@ export const MONTHLY = { approvals: 45, cashCents: 15000, points: 0 } as const;
 const TZ_MS = 8 * 3600_000;
 const DAY_MS = 86_400_000;
 
-/** Ranks by lifetime NEW approvals. ponytail: placeholder thresholds — tune with the points maths. */
-export const LEVELS = [
-  { name: "Rookie", min: 0 },
-  { name: "Bronze", min: 10 },
-  { name: "Silver", min: 25 },
-  { name: "Gold", min: 50 },
-  { name: "Platinum", min: 100 },
-  { name: "Diamond", min: 200 },
-] as const;
+// ─── Levels & points ─────────────────────────────────────────────────────────
+// XP = counted (new) approved creatives. Level 1 → 2 takes 5; each level after
+// takes a little more (+1 every 3 levels), so level 10 needs 54 approvals and
+// level 50 needs 621. At 50 an editor can prestige: level resets to 1, XP past
+// the cap carries over, and they level (and earn level-up points) again.
 
-export function levelFor(approvals: number) {
-  let i = 0;
-  while (i + 1 < LEVELS.length && approvals >= LEVELS[i + 1].min) i++;
-  const next = LEVELS[i + 1] ?? null;
-  return { index: i + 1, name: LEVELS[i].name, min: LEVELS[i].min, next };
+export const MAX_LEVEL = 50;
+export const POINTS_PER_APPROVAL = 2;
+
+/** Approvals needed to go from `level` to `level + 1`. */
+export const levelCost = (level: number) => 5 + Math.floor((level - 1) / 3);
+
+/** THRESHOLDS[L] = total XP needed to reach level L (index 0 unused). */
+export const THRESHOLDS: readonly number[] = (() => {
+  const t = [0, 0];
+  for (let l = 1; l < MAX_LEVEL; l++) t.push(t[l] + levelCost(l));
+  return t;
+})();
+
+/** Points for reaching `level`: 2–10 → 5, 11–20 → 7, 21–30 → 9, 31–50 → 12. */
+export function levelUpPoints(level: number): number {
+  if (level <= 1) return 0;
+  if (level <= 10) return 5;
+  if (level <= 20) return 7;
+  if (level <= 30) return 9;
+  return 12;
+}
+
+/** Level-up points earned getting from level 1 to `level`. */
+const runPoints = (level: number) => {
+  let sum = 0;
+  for (let l = 2; l <= level; l++) sum += levelUpPoints(l);
+  return sum;
+};
+/** One full run, level 1 → 50 (445 points). */
+export const FULL_RUN_POINTS = runPoints(MAX_LEVEL);
+
+/** Tier name shown next to the level. */
+export function tierFor(level: number): string {
+  if (level >= MAX_LEVEL) return "Legend";
+  if (level > 30) return "Platinum";
+  if (level > 20) return "Gold";
+  if (level > 10) return "Silver";
+  return "Bronze";
+}
+
+export type Progress = ReturnType<typeof progressFrom>;
+
+/**
+ * Level, progress and points from an editor's counted approvals, prestige
+ * state and points ledger. Approval and level-up points are derived (never
+ * stored), so voiding an approval removes its points too.
+ */
+export function progressFrom(
+  approvals: number,
+  ledgerPoints: number,
+  profile: { prestige: number; xpOffset: number } | null
+) {
+  const prestige = profile?.prestige ?? 0;
+  const xp = Math.max(0, approvals - (profile?.xpOffset ?? 0));
+  let level = 1;
+  while (level < MAX_LEVEL && xp >= THRESHOLDS[level + 1]) level++;
+  const maxed = level >= MAX_LEVEL;
+  const into = xp - THRESHOLDS[level];
+  const needed = maxed ? 0 : levelCost(level);
+  const earned = approvals * POINTS_PER_APPROVAL + prestige * FULL_RUN_POINTS + runPoints(level);
+  return {
+    level,
+    tier: tierFor(level),
+    prestige,
+    xp,
+    into,
+    needed,
+    pct: maxed ? 100 : Math.round((into / needed) * 100),
+    canPrestige: maxed,
+    nextReward: maxed ? 0 : levelUpPoints(level + 1),
+    approvals,
+    /** Points from approvals + level-ups (derived, not in the ledger). */
+    earned,
+    points: ledgerPoints + earned,
+  };
 }
 
 /** { week: "2026-W44", month: "2026-10" } for a moment, in team time. */
@@ -266,10 +332,42 @@ async function grantBonuses(): Promise<number> {
   return granted;
 }
 
-/** Points balance = sum of the ledger. */
-export async function pointsBalances(): Promise<Map<string, number>> {
+/** Ledger part of each balance (bonuses, manual adjustments, redemptions). */
+export async function ledgerBalances(): Promise<Map<string, number>> {
   const rows = await prisma.pointsEntry.groupBy({ by: ["userId"], _sum: { delta: true } });
   return new Map(rows.map((r) => [r.userId, r._sum.delta ?? 0]));
+}
+
+/** One user's level / points — the header progress bar and the Point Store. */
+export async function userProgress(userId: string): Promise<Progress> {
+  const [credits, ledger, profile] = await Promise.all([
+    creditedApprovals(),
+    prisma.pointsEntry.aggregate({ where: { userId }, _sum: { delta: true } }),
+    prisma.rewardsProfile.findUnique({ where: { userId } }),
+  ]);
+  const approvals = credits.filter((c) => c.userId === userId).length;
+  return progressFrom(approvals, ledger._sum.delta ?? 0, profile);
+}
+
+export class RewardsError extends Error {}
+
+/**
+ * Spends points on a store item. Serialised per user (advisory lock) so two
+ * redemptions can't both pass the balance check.
+ */
+export async function redeemItem(userId: string, itemId: string, by: string) {
+  // Earned points come from approvals; only the ledger can change under us, so it's re-read inside the lock.
+  const { earned } = await userProgress(userId);
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))`;
+    const item = await tx.rewardItem.findUnique({ where: { id: itemId } });
+    if (!item || !item.active) throw new RewardsError("That reward isn't available");
+    const ledger = (await tx.pointsEntry.aggregate({ where: { userId }, _sum: { delta: true } }))._sum.delta ?? 0;
+    const available = earned + ledger;
+    if (available < item.costPoints) throw new RewardsError(`Not enough points (${available} of ${item.costPoints})`);
+    await tx.redemption.create({ data: { userId, itemId: item.id, itemName: item.name, costPoints: item.costPoints } });
+    await tx.pointsEntry.create({ data: { userId, delta: -item.costPoints, reason: `Redeemed: ${item.name}`, createdBy: by } });
+  });
 }
 
 // ─── Read models for the admin pages ─────────────────────────────────────────
@@ -281,16 +379,18 @@ export type Standing = {
   month: number;
   lifetime: number;
   points: number;
-  level: ReturnType<typeof levelFor>;
+  progress: Progress;
 };
 
 /** Per-editor counts for this week / month / all time, plus points and level. */
 export async function loadStandings(now = new Date()): Promise<Standing[]> {
-  const [credits, points, users] = await Promise.all([
+  const [credits, ledger, users, profiles] = await Promise.all([
     creditedApprovals(),
-    pointsBalances(),
+    ledgerBalances(),
     prisma.user.findMany({ where: { status: "APPROVED" }, select: { id: true, name: true } }),
+    prisma.rewardsProfile.findMany(),
   ]);
+  const profileOf = new Map(profiles.map((p) => [p.userId, p]));
   const { weekStart, monthStart } = periodStarts(now);
   const stats = new Map(users.map((u) => [u.id, { week: 0, month: 0, lifetime: 0 }]));
   for (const c of credits) {
@@ -303,7 +403,8 @@ export async function loadStandings(now = new Date()): Promise<Standing[]> {
   return users
     .map((u) => {
       const s = stats.get(u.id)!;
-      return { userId: u.id, name: u.name, ...s, points: points.get(u.id) ?? 0, level: levelFor(s.lifetime) };
+      const progress = progressFrom(s.lifetime, ledger.get(u.id) ?? 0, profileOf.get(u.id) ?? null);
+      return { userId: u.id, name: u.name, ...s, points: progress.points, progress };
     })
     .sort((a, b) => b.month - a.month || b.week - a.week || b.lifetime - a.lifetime || a.name.localeCompare(b.name));
 }
@@ -336,4 +437,15 @@ export async function sheetNames() {
       };
     })
     .sort((a, b) => Number(a.userId !== null) - Number(b.userId !== null) || b.rows - a.rows);
+}
+
+/** Level 50 → prestige: back to level 1 with the next prestige rank. XP past the cap carries over. */
+export async function prestige(userId: string) {
+  const p = await userProgress(userId);
+  if (!p.canPrestige) throw new RewardsError(`Reach level ${MAX_LEVEL} to prestige`);
+  await prisma.rewardsProfile.upsert({
+    where: { userId },
+    create: { userId, prestige: 1, xpOffset: THRESHOLDS[MAX_LEVEL] },
+    update: { prestige: { increment: 1 }, xpOffset: { increment: THRESHOLDS[MAX_LEVEL] } },
+  });
 }

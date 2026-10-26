@@ -94,6 +94,7 @@ model User {
   bonusAwards     BonusAward[]
   redemptions     Redemption[]
   pointsEntries   PointsEntry[]
+  rewardsProfile  RewardsProfile?
 
   @@index([status, createdAt])
 }
@@ -448,4 +449,14 @@ model PointsEntry {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+/// Prestige state. Level/points are derived from approvals; prestiging bumps
+/// `prestige` and moves `xpOffset` by one full run (level 1 → 50).
+model RewardsProfile {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prestige  Int      @default(0)
+  xpOffset  Int      @default(0)
+  updatedAt DateTime @updatedAt
 }

@@ -18,6 +18,7 @@ const baseLinks = [
 const adminLinks = [
   { href: "/rewards", label: "Rewards" },
   { href: "/leaderboard", label: "Leaderboard" },
+  { href: "/store", label: "Point Store" },
   { href: "/usage", label: "Usage" },
   { href: "/admin", label: "Admin" },
 ];
@@ -42,7 +43,7 @@ export function MainNav({
             key={link.href}
             href={link.href}
             className={cn(
-              "relative flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
+              "relative flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
               active
                 ? "bg-foreground text-background"
                 : "text-muted-foreground hover:text-foreground"

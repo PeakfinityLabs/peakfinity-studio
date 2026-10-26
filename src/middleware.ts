@@ -34,6 +34,7 @@ export const config = {
     "/omni/:path*",
     "/rewards",
     "/leaderboard",
+    "/store",
     "/pending",
     "/api/generate/:path*",
     "/api/jobs/:path*",

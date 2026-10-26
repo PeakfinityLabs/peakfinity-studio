@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/models/registry";
-import { LEVELS, loadStandings, MONTHLY, periodKeys, WEEKLY } from "@/lib/rewards";
+import { levelCost, levelUpPoints, loadStandings, MAX_LEVEL, MONTHLY, periodKeys, POINTS_PER_APPROVAL, THRESHOLDS, WEEKLY } from "@/lib/rewards";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -119,14 +119,12 @@ export default async function LeaderboardPage() {
                     <TableCell className="font-mono tabular-nums">{i + 1}</TableCell>
                     <TableCell className="font-medium">{s.name}</TableCell>
                     <TableCell>
-                      <Badge variant={s.level.index > 1 ? "default" : "secondary"}>
-                        Lv {s.level.index} · {s.level.name}
+                      <Badge variant={s.progress.level > 1 || s.progress.prestige ? "default" : "secondary"}>
+                        {s.progress.prestige ? `P${s.progress.prestige} · ` : ""}Lv {s.progress.level} · {s.progress.tier}
                       </Badge>
-                      {s.level.next && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {s.level.next.min - s.lifetime} to {s.level.next.name}
-                        </span>
-                      )}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {s.progress.canPrestige ? "can prestige" : `${s.progress.needed - s.progress.into} to Lv ${s.progress.level + 1}`}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <Bar value={s.week} target={WEEKLY.approvals} />
@@ -150,9 +148,11 @@ export default async function LeaderboardPage() {
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        Levels (lifetime new approvals):{" "}
-        {LEVELS.map((l, i) => `Lv ${i + 1} ${l.name} ${l.min}+`).join(" · ")}. Placeholder
-        thresholds — they&apos;ll be tuned with the points program.
+        {POINTS_PER_APPROVAL} pts per approved creative. Level 2 takes {levelCost(1)} approvals, each
+        level after a little more (Lv 10 at {THRESHOLDS[10]}, Lv 20 at {THRESHOLDS[20]}, Lv 30 at{" "}
+        {THRESHOLDS[30]}, Lv {MAX_LEVEL} at {THRESHOLDS[MAX_LEVEL]}). Level-up points: {levelUpPoints(2)} to Lv 10 ·{" "}
+        {levelUpPoints(11)} to Lv 20 · {levelUpPoints(21)} to Lv 30 · {levelUpPoints(31)} to Lv {MAX_LEVEL}. Prestige
+        at Lv {MAX_LEVEL}.
       </p>
     </div>
   );

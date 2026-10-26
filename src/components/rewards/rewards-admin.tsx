@@ -184,7 +184,21 @@ export function RewardsAdmin(props: {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Shop items={props.items} editors={editors} busy={busy} run={run} />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-display text-lg">Point Store</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              {props.items.filter((i) => i.active).length} item(s) live in the store. Add or remove them in{" "}
+              <a className="text-foreground underline underline-offset-4" href="/admin">Admin → Point Store items</a>.
+            </p>
+            <p>
+              Editors earn 2 points per approved creative and 5–12 points per level up. Balances are in the Points
+              panel below.
+            </p>
+          </CardContent>
+        </Card>
         <Redemptions rows={props.redemptions} busy={busy} run={run} />
       </div>
 
@@ -245,121 +259,6 @@ export function RewardsAdmin(props: {
 }
 
 type Run = (body: Record<string, unknown>, ok: string) => Promise<boolean>;
-
-function Shop({ items, editors, busy, run }: { items: Item[]; editors: Editor[]; busy: boolean; run: Run }) {
-  const blank = { itemId: "", name: "", description: "", kind: "cash", costPoints: "", active: true };
-  const [form, setForm] = useState(blank);
-  const [redeemFor, setRedeemFor] = useState<Record<string, string>>({});
-
-  const save = async () => {
-    const ok = await run(
-      {
-        action: "item",
-        ...(form.itemId ? { itemId: form.itemId } : {}),
-        name: form.name,
-        description: form.description,
-        kind: form.kind,
-        costPoints: Number(form.costPoints),
-        active: form.active,
-      },
-      form.itemId ? "Reward updated" : "Reward added"
-    );
-    if (ok) setForm(blank);
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-display text-lg">Reward shop</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          What editors can buy with points. Costs are placeholders until the points maths is done.
-        </p>
-        {items.length > 0 && (
-          <ul className="divide-y divide-border/60 rounded-lg border">
-            {items.map((item) => (
-              <li key={item.id} className={`flex flex-wrap items-center gap-2 p-3 ${item.active ? "" : "opacity-50"}`}>
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium">
-                    {item.name} <Badge variant="secondary">{item.kind}</Badge>
-                    {!item.active && <Badge variant="outline" className="ml-1">hidden</Badge>}
-                  </p>
-                  {item.description && <p className="text-xs text-muted-foreground">{item.description}</p>}
-                </div>
-                <span className="font-mono text-sm tabular-nums">{item.costPoints} pts</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    setForm({ itemId: item.id, name: item.name, description: item.description ?? "", kind: item.kind, costPoints: String(item.costPoints), active: item.active })
-                  }
-                >
-                  Edit
-                </Button>
-                {item.active && (
-                  <span className="flex items-center gap-1">
-                    <select
-                      aria-label={`Redeem ${item.name} for`}
-                      className={selectCls}
-                      value={redeemFor[item.id] ?? ""}
-                      onChange={(e) => setRedeemFor({ ...redeemFor, [item.id]: e.target.value })}
-                    >
-                      <option value="">Redeem for…</option>
-                      {editors.map((e) => (
-                        <option key={e.id} value={e.id} disabled={e.points < item.costPoints}>
-                          {e.name} ({e.points} pts)
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      size="sm"
-                      disabled={busy || !redeemFor[item.id]}
-                      onClick={() => void run({ action: "redeem", userId: redeemFor[item.id], itemId: item.id }, `Redeemed ${item.name}`)}
-                    >
-                      Redeem
-                    </Button>
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        <form
-          className="grid gap-2 rounded-lg border border-dashed p-3 sm:grid-cols-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void save();
-          }}
-        >
-          <p className="label-mono sm:col-span-2">{form.itemId ? "Edit reward" : "Add a reward"}</p>
-          <Input aria-label="Reward name" placeholder="Name (e.g. $25 cash, Hoodie)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={80} />
-          <Input aria-label="Cost in points" placeholder="Cost (points)" type="number" min={1} value={form.costPoints} onChange={(e) => setForm({ ...form, costPoints: e.target.value })} required />
-          <Input aria-label="Description" className="sm:col-span-2" placeholder="Description (optional)" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} maxLength={300} />
-          <select aria-label="Reward type" className={selectCls} value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
-            <option value="cash">Cash</option>
-            <option value="item">Item</option>
-            <option value="perk">Perk</option>
-          </select>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
-            Available in the shop
-          </label>
-          <div className="flex gap-2 sm:col-span-2">
-            <Button type="submit" size="sm" disabled={busy}>
-              {form.itemId ? "Save changes" : "Add reward"}
-            </Button>
-            {form.itemId && (
-              <Button type="button" size="sm" variant="outline" onClick={() => setForm(blank)}>
-                Cancel
-              </Button>
-            )}
-          </div>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
 
 function Redemptions({ rows, busy, run }: { rows: RedemptionRow[]; busy: boolean; run: Run }) {
   return (
