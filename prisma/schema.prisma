@@ -90,6 +90,10 @@ model User {
   resetTokens     PasswordResetToken[]
   omniProjects    OmniProject[]
   avatars         Avatar[]
+  editorAliases   EditorAlias[]
+  bonusAwards     BonusAward[]
+  redemptions     Redemption[]
+  pointsEntries   PointsEntry[]
 
   @@index([status, createdAt])
 }
@@ -331,4 +335,117 @@ model Avatar {
 
   @@index([shared, createdAt])
   @@index([createdById])
+}
+
+// ─── Rewards (admin-only while testing) ─────────────────────────────────────
+
+/// One row of the creative-tracking Google Sheet, as last seen by the sync.
+/// An ad counts as approved when its status turns "Ready" AFTER tracking
+/// began: rows already Ready at the first sync are `preexisting` and never count.
+model SheetCreative {
+  /// "<tab gid>:<normalised title>#<n>" — the sheet has no row ids.
+  key         String    @id
+  tab         String
+  title       String
+  /// Editor cell as typed (may name several people: "Ali, Cassandra").
+  editorName  String?
+  status      String
+  preexisting Boolean   @default(false)
+  /// When the sync first saw it Ready (cleared if it leaves Ready).
+  approvedAt  DateTime?
+  /// Admin voided this approval (it no longer counts).
+  voidedAt    DateTime?
+  firstSeenAt DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([approvedAt])
+}
+
+/// Sheet editor name → Studio account (e.g. "nicu" → Lance). userId null =
+/// explicitly unmapped (overrides the automatic name match).
+model EditorAlias {
+  /// Normalised (lower-case) sheet name.
+  sheetName String  @id
+  userId    String?
+  user      User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Singleton sync status.
+model RewardsSync {
+  id         String    @id @default("main")
+  /// Set by the first successful sync: everything Ready then is "old".
+  baselineAt DateTime?
+  lastSyncAt DateTime?
+  lastError  String?
+  rows       Int       @default(0)
+}
+
+enum BonusKind {
+  WEEKLY
+  MONTHLY
+}
+
+/// A weekly / monthly target hit. Unique per editor + period, so it's awarded
+/// once; revoking keeps the row so the next sync doesn't re-award it.
+model BonusAward {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      BonusKind
+  /// "2026-W44" (weekly) or "2026-10" (monthly).
+  period    String
+  approvals Int
+  cashCents Int
+  points    Int
+  paidAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, kind, period])
+}
+
+/// Something editors can buy with points.
+model RewardItem {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  /// "cash" | "item" | "perk"
+  kind        String       @default("item")
+  costPoints  Int
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  redemptions Redemption[]
+}
+
+enum RedemptionStatus {
+  PENDING
+  FULFILLED
+  REJECTED
+}
+
+model Redemption {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       RewardItem       @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  itemName   String
+  costPoints Int
+  status     RedemptionStatus @default(PENDING)
+  resolvedBy String?
+  resolvedAt DateTime?
+  createdAt  DateTime         @default(now())
+}
+
+/// Points ledger — balance is the sum of deltas (never stored).
+model PointsEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  delta     Int
+  reason    String
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

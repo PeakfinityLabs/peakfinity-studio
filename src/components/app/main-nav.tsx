@@ -13,8 +13,11 @@ const baseLinks = [
   { href: "/voices", label: "Voices" },
 ];
 
-// Usage (team spend) and Admin are admin-only.
+// Usage (team spend) and Admin are admin-only. Rewards + Leaderboard too,
+// while the program is being tested.
 const adminLinks = [
+  { href: "/rewards", label: "Rewards" },
+  { href: "/leaderboard", label: "Leaderboard" },
   { href: "/usage", label: "Usage" },
   { href: "/admin", label: "Admin" },
 ];

@@ -32,6 +32,8 @@ export const config = {
     "/tracker",
     "/voices",
     "/omni/:path*",
+    "/rewards",
+    "/leaderboard",
     "/pending",
     "/api/generate/:path*",
     "/api/jobs/:path*",
