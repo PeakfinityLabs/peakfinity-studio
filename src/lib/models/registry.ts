@@ -350,7 +350,7 @@ const veo3Schema = z
     end_image_url: url.optional(),
     aspect_ratio: z.enum(["16:9", "9:16"]).default("9:16"),
     duration: z.enum(VEO_DURATIONS).default("8"),
-    /** Server 1 (main) or Server 2 (backup) — see lib/omnirouter.ts. */
+    /** Server 1 = omnirouter, Server 2 = the same model on fal — see lib/server2.ts. */
     server: z.enum(["1", "2"]).default("1"),
   })
   .refine((p) => !p.end_image_url || p.image_url, {
@@ -376,7 +376,7 @@ const veo3: ModelDef = {
       label: "Server",
       options: ["1", "2"],
       optionLabels: { "1": "Server 1", "2": "Server 2" },
-      help: "Getting errors? Switch to the other server and try again",
+      help: "Getting errors? Switch server. Server 2 runs the same Veo 3.1 Lite on fal ($0.40 per clip)",
     },
   ],
   uploaders: [
@@ -388,8 +388,8 @@ const veo3: ModelDef = {
   toFalInput: stripEmpty,
   // Measured: an 8s 720p job billed $0.03. The provider's actual per-job cost
   // replaces this estimate when the job settles.
-  estimateCostCents: () => 3,
-  costNote: "≈$0.03 per 8s clip · 720p · billed at the provider's actual cost",
+  estimateCostCents: (p) => (p.server === "2" ? 40 : 3),
+  costNote: "Server 1 ≈$0.03 · Server 2 (fal) $0.40 per 8s clip · 720p",
   provider: "omnirouter",
 };
 

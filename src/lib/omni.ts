@@ -53,7 +53,7 @@ export const omniGenerateSchema = z
     aspect_ratio: z.enum(OMNI_ASPECT_RATIOS).default("9:16"),
     duration: z.enum(OMNI_DURATIONS).default("8"),
     resolution: z.enum(OMNI_RESOLUTIONS).default("720p"),
-    /** Server 1 (main) or Server 2 (backup) — see lib/omnirouter.ts. */
+    /** Server 1 = omnirouter, Server 2 = the same Omni Flash 1.1 on fal — see lib/server2.ts. */
     server: z.enum(["1", "2"]).default("1"),
     avatar_ids: z.array(z.string().min(1)).max(MAX_AVATARS).default([]),
     image_urls: z.array(url).max(MAX_INGREDIENTS.create).default([]),

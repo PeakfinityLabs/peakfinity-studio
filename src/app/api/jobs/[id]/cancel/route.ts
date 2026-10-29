@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { fal } from "@/lib/fal/client";
 import { canViewJob } from "@/lib/job-visibility";
 import { parseJobInput } from "@/lib/jobs/types";
-import { cancelJob, isOmnirouterEndpoint, modelFromEndpoint, serverOf } from "@/lib/omnirouter";
+import { cancelJob, isOmnirouterEndpoint, modelFromEndpoint } from "@/lib/omnirouter";
 
 export const runtime = "nodejs";
 
@@ -29,10 +29,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: `Job is already ${job.status}` }, { status: 409 });
   }
 
-  const { endpoint: jobEndpoint, params: jobParams } = parseJobInput(job.input);
+  const { endpoint: jobEndpoint } = parseJobInput(job.input);
   if (job.falRequestId && isOmnirouterEndpoint(jobEndpoint)) {
     try {
-      await cancelJob(modelFromEndpoint(jobEndpoint), job.falRequestId, serverOf(jobParams));
+      await cancelJob(modelFromEndpoint(jobEndpoint), job.falRequestId);
     } catch {
       return NextResponse.json(
         { error: "The provider could not cancel this job (it may already be running)" },

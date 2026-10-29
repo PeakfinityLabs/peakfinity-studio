@@ -1,5 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import { fal } from "@/lib/fal/client";
+import { falErrorMessage, isFalValidationError } from "@/lib/fal/errors";
+import { parseJobInput } from "@/lib/jobs/types";
 import { r2Configured, uploadToR2 } from "@/lib/r2";
 import { parseVoicePlan, RevoiceError, startRevoice } from "@/lib/voice/revoice";
 import type { Prisma } from "@/generated/prisma/client";
@@ -68,7 +71,7 @@ export function videoSeconds(job: { type: string; input: unknown }, payload: unk
   const p = payload as { output?: { duration_sec?: unknown }; video?: { duration?: unknown } } | null;
   const params = (job.input as { params?: { duration?: unknown } } | null)?.params;
   for (const v of [p?.output?.duration_sec, p?.video?.duration, params?.duration]) {
-    const n = Number(v);
+    const n = typeof v === "string" ? parseFloat(v) : Number(v); // fal Veo sends "8s"
     if (v !== null && v !== undefined && Number.isFinite(n) && n > 0) return n;
   }
   return null;
@@ -244,6 +247,21 @@ export async function maybeRunVoiceChain(jobId: string, knownOutputs?: OutputFil
 }
 
 /** Marks a job FAILED (idempotent — never downgrades a COMPLETED job). */
+/** Polling fallback for one open fal job (Omni Server 2 when a webhook is missed). */
+export async function refreshFalJob(job: { id: string; falRequestId: string | null; input: unknown }) {
+  if (!job.falRequestId) return;
+  const { endpoint } = parseJobInput(job.input);
+  const status = await fal.queue.status(endpoint, { requestId: job.falRequestId });
+  if (status.status !== "COMPLETED") return;
+  try {
+    const result = await fal.queue.result(endpoint, { requestId: job.falRequestId });
+    await completeJob(job.id, result.data);
+  } catch (error) {
+    if (isFalValidationError(error)) await failJob(job.id, falErrorMessage(error));
+    else throw error;
+  }
+}
+
 export async function failJob(jobId: string, errorMessage: string, payload?: unknown) {
   await prisma.job.updateMany({
     where: { id: jobId, status: { in: ["IN_QUEUE", "IN_PROGRESS"] } },

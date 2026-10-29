@@ -5,6 +5,9 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { OMNI_ENDPOINT, omniGenerateSchema, OMNI_CENTS_PER_SECOND } from "@/lib/omni";
 import { findOwnProject, visibleAvatarsWhere } from "@/lib/omni-server";
 import { submitJob, toAspect, type OmnirouterInput } from "@/lib/omnirouter";
+import { fal, falWebhookUrl } from "@/lib/fal/client";
+import { falErrorMessage } from "@/lib/fal/errors";
+import { FAL_OMNI_CENTS_PER_SECOND, falOmni, type OmniFalRequest } from "@/lib/server2";
 import { MAX_SOURCE_VIDEO_SECONDS } from "@/lib/omni";
 import { publicVideoWindow } from "@/lib/omni-video";
 import type { Prisma } from "@/generated/prisma/client";
@@ -95,6 +98,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     aspect_ratio: toAspect(rest.aspect_ratio),
   };
   let providerInput: OmnirouterInput;
+  // Server 2 = the same Omni Flash 1.1 on fal (built alongside, used if picked).
+  let falReq: OmniFalRequest;
   // Seconds of video this job produces — drives the $0.02/s cost and usage seconds.
   let seconds = Number(rest.duration);
   try {
@@ -104,12 +109,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         (a) => `data:${a.imageType};base64,${Buffer.from(a.imageData).toString("base64")}`
       );
       const refs = [...avatarRefs, ...rest.image_urls];
+      falReq = { mode: "create", prompt: rest.prompt, aspect: rest.aspect_ratio, seconds, images: refs };
       providerInput = {
         ...base,
         duration_sec: Number(rest.duration),
         ...(refs.length ? { reference_image_urls: refs } : {}),
       };
     } else if (rest.mode === "animate") {
+      falReq = { mode: "animate", prompt: rest.prompt, aspect: rest.aspect_ratio, seconds, image: rest.image_url! };
       providerInput = {
         ...base,
         duration_sec: Number(rest.duration),
@@ -123,6 +130,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         project.aspectRatio
       );
       seconds = Math.max(1, Math.round(window.trimEnd - window.trimStart));
+      // fal Extend adds a new continuation (3–10s) rather than re-rendering the window.
+      falReq =
+        rest.mode === "edit"
+          ? { mode: "edit", prompt: rest.prompt, video: window.url }
+          : { mode: "extend", prompt: rest.prompt, video: window.url, seconds: Number(rest.duration) };
       providerInput = {
         ...base,
         reference_video_url: window.url,
@@ -140,10 +152,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   let remoteId: string;
+  let endpoint = OMNI_ENDPOINT;
+  let centsPerSecond = OMNI_CENTS_PER_SECOND;
   try {
-    remoteId = (await submitJob("omni-flash", providerInput, rest.server)).id;
+    if (rest.server === "2") {
+      const req2 = falOmni(falReq!);
+      if (req2.input.duration) seconds = Number(req2.input.duration);
+      endpoint = req2.endpoint;
+      centsPerSecond = FAL_OMNI_CENTS_PER_SECOND;
+      remoteId = (await fal.queue.submit(endpoint, { input: req2.input, webhookUrl: falWebhookUrl() })).request_id;
+    } else {
+      remoteId = (await submitJob("omni-flash", providerInput)).id;
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "submission failed";
+    const message =
+      rest.server === "2" ? falErrorMessage(error) : error instanceof Error ? error.message : "submission failed";
     return NextResponse.json(
       { error: `Omni Flash rejected the request: ${message}` },
       { status: 502 }
@@ -158,7 +181,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       status: "IN_QUEUE",
       falRequestId: remoteId,
       input: {
-        endpoint: OMNI_ENDPOINT,
+        endpoint,
         params: { ...modeParams, duration: String(seconds) },
         mode: rest.mode,
         projectId: id,
@@ -167,7 +190,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         ...(sourceClip ? { sourceClipId: sourceClip.id } : {}),
       } as Prisma.InputJsonValue,
       prompt: rest.prompt,
-      estimatedCostCents: seconds * OMNI_CENTS_PER_SECOND,
+      estimatedCostCents: seconds * centsPerSecond,
       assets: {
         create: inputUrls.map((url) => ({
           kind: "INPUT" as const,

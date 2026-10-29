@@ -11,7 +11,6 @@ import {
   isOmnirouterEndpoint,
   mapStatus,
   modelFromEndpoint,
-  serverOf,
 } from "@/lib/omnirouter";
 
 /**
@@ -28,12 +27,12 @@ export async function refreshOmnirouterJob(job: {
 }): Promise<void> {
   if (job.status !== "IN_QUEUE" && job.status !== "IN_PROGRESS") return;
   if (!job.falRequestId) return;
-  const { endpoint, params } = parseJobInput(job.input);
+  const { endpoint } = parseJobInput(job.input);
   if (!isOmnirouterEndpoint(endpoint)) return;
 
   let remote;
   try {
-    remote = await getJob(modelFromEndpoint(endpoint), job.falRequestId, serverOf(params));
+    remote = await getJob(modelFromEndpoint(endpoint), job.falRequestId);
   } catch (error) {
     // 404 = provider no longer knows the job; anything else is transient.
     if ((error as { status?: number }).status === 404) {

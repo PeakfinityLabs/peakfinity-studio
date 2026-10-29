@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fal, falWebhookUrl } from "@/lib/fal/client";
-import { modelFromEndpoint, serverOf, submitJob, toAspect } from "@/lib/omnirouter";
+import { modelFromEndpoint, submitJob, toAspect } from "@/lib/omnirouter";
+import { FAL_VEO_CENTS_PER_SECOND, falVeo, isServer2 } from "@/lib/server2";
 import { isModelSlug, MODELS } from "@/lib/models/registry";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { engineAvailable } from "@/lib/voice/providers";
@@ -121,17 +122,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
     modelParams.generate_audio = false;
   }
 
-  const endpoint = def.resolveEndpoint(modelParams);
-  const falInput = def.toFalInput(modelParams);
+  let endpoint = def.resolveEndpoint(modelParams);
+  let falInput = def.toFalInput(modelParams);
   // The lip-sync fee is NOT added here — the chained KLING_LIPSYNC job carries
   // it, and both jobs record UsageEvents (adding it twice would double-count).
   // The studio form still shows the combined figure pre-submit.
-  const estimatedCostCents = def.estimateCostCents(modelParams);
+  let estimatedCostCents = def.estimateCostCents(modelParams);
+  // Veo "Server 2" = the same Veo 3.1 Lite on fal; it then runs as a normal fal job.
+  const viaServer2 = def.provider === "omnirouter" && isServer2(modelParams);
+  if (viaServer2) {
+    ({ endpoint, input: falInput } = falVeo(modelParams));
+    estimatedCostCents = 8 * FAL_VEO_CENTS_PER_SECOND;
+  }
 
   // Veo 3.1 goes to omnirouter with its own key; everything else to fal.
   // (falRequestId holds whichever provider's job id.)
   let falRequestId: string | null = null;
-  if (def.provider === "omnirouter") {
+  if (def.provider === "omnirouter" && !viaServer2) {
     try {
       const submitted = await submitJob(modelFromEndpoint(endpoint), {
         prompt: String(modelParams.prompt),
@@ -143,7 +150,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
         ...(typeof modelParams.end_image_url === "string"
           ? { end_image_url: modelParams.end_image_url }
           : {}),
-      }, serverOf(modelParams));
+      });
       falRequestId = submitted.id;
     } catch (error) {
       const message = error instanceof Error ? error.message : "submission failed";

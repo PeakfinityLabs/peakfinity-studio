@@ -5,6 +5,9 @@ import { prisma } from "@/lib/db";
 import { MAX_AVATARS, OMNI_ASPECT_RATIOS } from "@/lib/omni";
 import { findOwnProject, usableAvatarIds } from "@/lib/omni-server";
 import { refreshOmnirouterJob } from "@/lib/jobs/omnirouter-jobs";
+import { refreshFalJob } from "@/lib/jobs/complete";
+import { parseJobInput } from "@/lib/jobs/types";
+import { isOmnirouterEndpoint } from "@/lib/omnirouter";
 
 export const runtime = "nodejs";
 
@@ -39,7 +42,13 @@ export async function GET(_req: Request, { params }: Ctx) {
     select: { id: true, status: true, falRequestId: true, input: true },
     take: 10,
   });
-  await Promise.all(open.map((j) => refreshOmnirouterJob(j).catch(() => undefined)));
+  await Promise.all(
+    open.map((j) =>
+      (isOmnirouterEndpoint(parseJobInput(j.input).endpoint) ? refreshOmnirouterJob(j) : refreshFalJob(j)).catch(
+        () => undefined
+      )
+    )
+  );
 
   const generations = await prisma.job.findMany({
     where,
