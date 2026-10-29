@@ -76,6 +76,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     aspect_ratio: rest.aspect_ratio,
     duration: rest.duration,
     resolution: rest.resolution,
+    server: rest.server,
     ...(rest.mode === "create" || rest.mode === "edit" ? { image_urls: rest.image_urls } : {}),
     ...(rest.mode === "animate" ? { image_url: rest.image_url } : {}),
     ...(rest.mode === "edit" ? { video_url: rest.video_url } : {}),
@@ -140,7 +141,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   let remoteId: string;
   try {
-    remoteId = (await submitJob("omni-flash", providerInput)).id;
+    remoteId = (await submitJob("omni-flash", providerInput, rest.server)).id;
   } catch (error) {
     const message = error instanceof Error ? error.message : "submission failed";
     return NextResponse.json(

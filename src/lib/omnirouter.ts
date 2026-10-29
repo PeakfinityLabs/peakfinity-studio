@@ -1,5 +1,6 @@
 import "server-only";
 import { getSecret, type SecretName } from "@/lib/secrets";
+import { toEnglish } from "@/lib/translate";
 
 // Veo 3.1 Lite + Omni Flash 1.1, sold through omnirouter (api.webinhour.com).
 // No public docs — the contract below was mapped from the API's own
@@ -20,6 +21,30 @@ export const OMNIROUTER_MODELS = {
   "omni-flash": { secret: "OMNI_FLASH_API_KEY" as SecretName, label: "Omni Flash 1.1" },
 } as const;
 export type OmnirouterModel = keyof typeof OMNIROUTER_MODELS;
+
+/**
+ * Server 1 = the main keys on api.webinhour.com. Server 2 = a backup with its
+ * own keys (VEO_API_KEY_2 / OMNI_FLASH_API_KEY_2) and optionally its own API
+ * address — same contract. Editors pick one per generation; the job remembers
+ * it so polling and cancel go to the same server.
+ */
+export const SERVERS = ["1", "2"] as const;
+export type Server = (typeof SERVERS)[number];
+export const SERVER_LABELS: Record<string, string> = { "1": "Server 1", "2": "Server 2" };
+
+/** The server a saved job was sent to (older jobs: Server 1). */
+export function serverOf(params: Record<string, unknown>): Server {
+  return params.server === "2" ? "2" : "1";
+}
+
+async function serverConfig(model: OmnirouterModel, server: Server) {
+  const { secret, label } = OMNIROUTER_MODELS[model];
+  if (server === "1") return { key: await getSecret(secret), base: BASE_URL, label };
+  const custom = (await getSecret("OMNIROUTER_BASE_URL_2"))?.trim().replace(/\/+$/, "");
+  // Only https, so a typo'd address can't send keys in the clear.
+  const base = custom && /^https:\/\/[^\s]+$/.test(custom) ? custom : BASE_URL;
+  return { key: await getSecret(`${secret}_2` as SecretName), base, label: `${label} (Server 2)` };
+}
 
 export type OmnirouterInput = {
   prompt: string;
@@ -58,11 +83,16 @@ export function modelFromEndpoint(endpoint: string): OmnirouterModel {
   return model as OmnirouterModel;
 }
 
-async function call<T>(model: OmnirouterModel, path: string, init?: RequestInit): Promise<T> {
-  const { secret, label } = OMNIROUTER_MODELS[model];
-  const key = await getSecret(secret);
-  if (!key) throw new Error(`${label} API key isn't set — add it in Admin → API keys.`);
-  const res = await fetch(`${BASE_URL}${path}`, {
+async function call<T>(model: OmnirouterModel, server: Server, path: string, init?: RequestInit): Promise<T> {
+  const { key, base, label } = await serverConfig(model, server);
+  if (!key) {
+    throw new Error(
+      server === "2"
+        ? `Server 2 isn't set up yet — an admin needs to add its key in Admin → API keys. Switch back to Server 1.`
+        : `${label} API key isn't set — add it in Admin → API keys.`
+    );
+  }
+  const res = await fetch(`${base}${path}`, {
     ...init,
     headers: {
       authorization: `Bearer ${key}`,
@@ -80,7 +110,7 @@ async function call<T>(model: OmnirouterModel, path: string, init?: RequestInit)
   }
   if (!res.ok) {
     const err = (data as { error?: { message?: string } } | null)?.error?.message;
-    const e = new Error(err ?? `${label} request failed (${res.status})`) as Error & {
+    const e = new Error(err ? await toEnglish(err) : `${label} request failed (${res.status})`) as Error & {
       status?: number;
     };
     e.status = res.status;
@@ -89,19 +119,19 @@ async function call<T>(model: OmnirouterModel, path: string, init?: RequestInit)
   return data as T;
 }
 
-export function submitJob(model: OmnirouterModel, input: OmnirouterInput) {
-  return call<OmnirouterJob>(model, "/jobs", {
+export function submitJob(model: OmnirouterModel, input: OmnirouterInput, server: Server = "1") {
+  return call<OmnirouterJob>(model, server, "/jobs", {
     method: "POST",
     body: JSON.stringify({ model, input }),
   });
 }
 
-export function getJob(model: OmnirouterModel, id: string) {
-  return call<OmnirouterJob>(model, `/jobs/${encodeURIComponent(id)}`);
+export function getJob(model: OmnirouterModel, id: string, server: Server = "1") {
+  return call<OmnirouterJob>(model, server, `/jobs/${encodeURIComponent(id)}`);
 }
 
-export function cancelJob(model: OmnirouterModel, id: string) {
-  return call<unknown>(model, `/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+export function cancelJob(model: OmnirouterModel, id: string, server: Server = "1") {
+  return call<unknown>(model, server, `/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
 }
 
 /** Provider status → our JobStatus (or "DONE"/"FAILED" terminal markers). */
@@ -122,9 +152,10 @@ export function mapStatus(status: string): "IN_QUEUE" | "IN_PROGRESS" | "DONE" |
   }
 }
 
-export function errorText(job: OmnirouterJob): string {
-  if (typeof job.error === "string") return job.error;
-  return job.error?.message ?? `Generation ${job.status}`;
+/** The provider's failure reason, in English (it sometimes answers in Vietnamese). */
+export async function errorText(job: OmnirouterJob): Promise<string> {
+  const raw = typeof job.error === "string" ? job.error : job.error?.message;
+  return raw ? toEnglish(raw) : `Generation ${job.status}`;
 }
 
 /** Dollars string ("0.03000000") → whole cents, at least 1 for any non-zero cost. */

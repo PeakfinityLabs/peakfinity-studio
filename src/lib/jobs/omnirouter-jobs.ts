@@ -11,6 +11,7 @@ import {
   isOmnirouterEndpoint,
   mapStatus,
   modelFromEndpoint,
+  serverOf,
 } from "@/lib/omnirouter";
 
 /**
@@ -27,12 +28,12 @@ export async function refreshOmnirouterJob(job: {
 }): Promise<void> {
   if (job.status !== "IN_QUEUE" && job.status !== "IN_PROGRESS") return;
   if (!job.falRequestId) return;
-  const { endpoint } = parseJobInput(job.input);
+  const { endpoint, params } = parseJobInput(job.input);
   if (!isOmnirouterEndpoint(endpoint)) return;
 
   let remote;
   try {
-    remote = await getJob(modelFromEndpoint(endpoint), job.falRequestId);
+    remote = await getJob(modelFromEndpoint(endpoint), job.falRequestId, serverOf(params));
   } catch (error) {
     // 404 = provider no longer knows the job; anything else is transient.
     if ((error as { status?: number }).status === 404) {
@@ -82,7 +83,7 @@ export async function refreshOmnirouterJob(job: {
       video: { url, content_type: remote.output.mime_type ?? "video/mp4" },
     });
   } else if (mapped === "FAILED") {
-    await failJob(job.id, errorText(remote), remote);
+    await failJob(job.id, await errorText(remote), remote);
   } else if (mapped !== job.status) {
     await prisma.job.updateMany({
       where: { id: job.id, status: { in: ["IN_QUEUE", "IN_PROGRESS"] } },

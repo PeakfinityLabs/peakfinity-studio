@@ -78,6 +78,11 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
   const [mode, setMode] = useState<OmniMode>("create");
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState<string>("8");
+  // Server 1 = main, Server 2 = backup. Remembered per browser so editors don't re-pick it.
+  const [server, setServer] = useState<"1" | "2">("1");
+  useEffect(() => {
+    if (localStorage.getItem("omni-server") === "2") setServer("2");
+  }, []);
   const [avatarIds, setAvatarIds] = useState<string[]>([]);
   const [ingredients, setIngredients] = useState<string[]>([]);
   const [photo, setPhoto] = useState<string[]>([]);
@@ -180,6 +185,7 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
           aspect_ratio: project.aspectRatio,
           duration,
           resolution: "720p",
+          server,
           avatar_ids: mode === "create" ? avatarIds : [],
           image_urls: mode === "create" ? ingredients.slice(0, maxIngredients) : [],
           ...(mode === "animate" ? { image_url: photo[0] } : {}),
@@ -952,9 +958,32 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1.5">
+                <Label>Server</Label>
+                <Select
+                  value={server}
+                  onValueChange={(v) => {
+                    if (v !== "1" && v !== "2") return;
+                    setServer(v);
+                    try {
+                      localStorage.setItem("omni-server", v);
+                    } catch {
+                      // private mode — still applies for this session
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full" aria-label="Server">
+                    <SelectValue>{server === "2" ? "Server 2" : "Server 1"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Server 1</SelectItem>
+                    <SelectItem value="2">Server 2</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              {project.aspectRatio} · 720p (set by the project)
+              {project.aspectRatio} · 720p (set by the project) · Getting errors? Switch server and try again.
             </p>
 
             <Button

@@ -350,6 +350,8 @@ const veo3Schema = z
     end_image_url: url.optional(),
     aspect_ratio: z.enum(["16:9", "9:16"]).default("9:16"),
     duration: z.enum(VEO_DURATIONS).default("8"),
+    /** Server 1 (main) or Server 2 (backup) — see lib/omnirouter.ts. */
+    server: z.enum(["1", "2"]).default("1"),
   })
   .refine((p) => !p.end_image_url || p.image_url, {
     message: "Add a start frame to use an end frame",
@@ -368,12 +370,20 @@ const veo3: ModelDef = {
   fields: [
     { kind: "select", name: "aspect_ratio", label: "Aspect ratio", options: ["9:16", "16:9"], optionLabels: ASPECT_RATIO_LABELS },
     { kind: "select", name: "duration", label: "Duration (s)", options: VEO_DURATIONS, help: "Veo 3.1 clips are always 8s" },
+    {
+      kind: "select",
+      name: "server",
+      label: "Server",
+      options: ["1", "2"],
+      optionLabels: { "1": "Server 1", "2": "Server 2" },
+      help: "Getting errors? Switch to the other server and try again",
+    },
   ],
   uploaders: [
     { name: "image_url", label: "Start frame (optional — animates this image)", accept: "image/*", max: 1, single: true },
     { name: "end_image_url", label: "End frame (optional — needs a start frame)", accept: "image/*", max: 1, single: true },
   ],
-  defaults: { aspect_ratio: "9:16", duration: "8" },
+  defaults: { aspect_ratio: "9:16", duration: "8", server: "1" },
   resolveEndpoint: () => "omnirouter/veo-3-1",
   toFalInput: stripEmpty,
   // Measured: an 8s 720p job billed $0.03. The provider's actual per-job cost

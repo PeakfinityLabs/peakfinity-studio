@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { fal, falWebhookUrl } from "@/lib/fal/client";
-import { modelFromEndpoint, submitJob, toAspect } from "@/lib/omnirouter";
+import { modelFromEndpoint, serverOf, submitJob, toAspect } from "@/lib/omnirouter";
 import { isModelSlug, MODELS } from "@/lib/models/registry";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { engineAvailable } from "@/lib/voice/providers";
@@ -143,7 +143,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ model: 
         ...(typeof modelParams.end_image_url === "string"
           ? { end_image_url: modelParams.end_image_url }
           : {}),
-      });
+      }, serverOf(modelParams));
       falRequestId = submitted.id;
     } catch (error) {
       const message = error instanceof Error ? error.message : "submission failed";
