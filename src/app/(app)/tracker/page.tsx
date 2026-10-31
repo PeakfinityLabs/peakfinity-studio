@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { trackerCaps } from "@/lib/creatives";
@@ -23,6 +24,8 @@ const COPY: Record<string, { heading: string; sub: string }> = {
 export default async function TrackerPage() {
   const me = (await getSessionUser())!;
   const caps = trackerCaps(me);
+  // Editors don't use the tracker (admins + strategists only).
+  if (caps.tier === "editor") redirect("/studio");
 
   // Assignable people for the editor/strategist pickers.
   const users = caps.canEditAllFields

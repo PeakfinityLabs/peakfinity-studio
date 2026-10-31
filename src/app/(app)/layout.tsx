@@ -5,6 +5,7 @@ import { MainNav } from "@/components/app/main-nav";
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { LevelBar } from "@/components/rewards/level-bar";
 import { userProgress } from "@/lib/rewards";
+import { trackerCaps } from "@/lib/creatives";
 import { SignOutItem } from "@/components/app/sign-out-item";
 import { Wordmark } from "@/components/brand/wordmark";
 import {
@@ -46,7 +47,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-6 px-4">
           <Wordmark />
           <div className="ml-2">
-            <MainNav isAdmin={isAdmin} pendingCount={pendingCount} />
+            <MainNav isAdmin={isAdmin} showTracker={trackerCaps(me).tier !== "editor"} pendingCount={pendingCount} />
           </div>
           <div className="ml-auto flex items-center gap-3">
             <ThemeToggle />
@@ -87,7 +88,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      {progress && <LevelBar progress={progress} href={isAdmin ? "/store" : undefined} />}
+      {progress && <LevelBar progress={progress} href="/store" />}
       <main className={`mx-auto w-full max-w-6xl flex-1 px-4 ${progress ? "pt-4 pb-10" : "py-10"}`}>{children}</main>
       <Toaster />
     </div>

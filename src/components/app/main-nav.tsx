@@ -7,31 +7,33 @@ import { cn } from "@/lib/utils";
 const baseLinks = [
   { href: "/studio", label: "Studio" },
   { href: "/library", label: "Library" },
-  // Editors see only their own assignments here; admins see everything.
+  // Admins + strategists only (hidden from editors).
   { href: "/tracker", label: "Tracker" },
   // Everyone can browse; only admins + strategists can add/manage.
   { href: "/voices", label: "Voices" },
-];
-
-// Usage (team spend) and Admin are admin-only. Rewards + Leaderboard too,
-// while the program is being tested.
-const adminLinks = [
-  { href: "/rewards", label: "Rewards" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/store", label: "Point Store" },
+];
+
+// Rewards admin, Usage (team spend) and Admin are admin-only.
+const adminLinks = [
+  { href: "/rewards", label: "Rewards" },
   { href: "/usage", label: "Usage" },
   { href: "/admin", label: "Admin" },
 ];
 
 export function MainNav({
   isAdmin = false,
+  showTracker = false,
   pendingCount = 0,
 }: {
   isAdmin?: boolean;
+  showTracker?: boolean;
   pendingCount?: number;
 }) {
   const pathname = usePathname();
-  const links = isAdmin ? [...baseLinks, ...adminLinks] : baseLinks;
+  const base = showTracker ? baseLinks : baseLinks.filter((l) => l.href !== "/tracker");
+  const links = isAdmin ? [...base, ...adminLinks] : base;
 
   return (
     <nav className="flex items-center gap-0.5 rounded-full border bg-card/60 p-1">

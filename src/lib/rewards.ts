@@ -13,8 +13,8 @@ import { mapHeaders, parseCsv } from "@/lib/creative-csv";
 export const SHEET_ID =
   process.env.REWARDS_SHEET_ID ?? "18vGc95jiYX7qa2d2Siv-bnOLnEYsED9XSuISd4deKnw";
 
-export const WEEKLY = { approvals: 8, cashCents: 5000, points: 20 } as const;
-export const MONTHLY = { approvals: 45, cashCents: 15000, points: 0 } as const;
+export const WEEKLY = { approvals: 15, cashCents: 5000, points: 10 } as const;
+export const MONTHLY = { approvals: 60, cashCents: 15000, points: 0 } as const;
 
 /** Weeks (Mon–Sun) and months are counted in UTC+8 (PH / team time). */
 const TZ_MS = 8 * 3600_000;
@@ -27,7 +27,8 @@ const DAY_MS = 86_400_000;
 // the cap carries over, and they level (and earn level-up points) again.
 
 export const MAX_LEVEL = 50;
-export const POINTS_PER_APPROVAL = 2;
+// Points were halved at launch (was 2 / 5·7·9·12, weekly 20); store prices unchanged.
+export const POINTS_PER_APPROVAL = 1;
 
 /** Approvals needed to go from `level` to `level + 1`. */
 export const levelCost = (level: number) => 5 + Math.floor((level - 1) / 3);
@@ -39,13 +40,13 @@ export const THRESHOLDS: readonly number[] = (() => {
   return t;
 })();
 
-/** Points for reaching `level`: 2–10 → 5, 11–20 → 7, 21–30 → 9, 31–50 → 12. */
+/** Points for reaching `level`: 2–10 → 2.5, 11–20 → 3.5, 21–30 → 4.5, 31–50 → 6. */
 export function levelUpPoints(level: number): number {
   if (level <= 1) return 0;
-  if (level <= 10) return 5;
-  if (level <= 20) return 7;
-  if (level <= 30) return 9;
-  return 12;
+  if (level <= 10) return 2.5;
+  if (level <= 20) return 3.5;
+  if (level <= 30) return 4.5;
+  return 6;
 }
 
 /** Level-up points earned getting from level 1 to `level`. */
@@ -54,7 +55,7 @@ const runPoints = (level: number) => {
   for (let l = 2; l <= level; l++) sum += levelUpPoints(l);
   return sum;
 };
-/** One full run, level 1 → 50 (445 points). */
+/** One full run, level 1 → 50 (222.5 points). */
 export const FULL_RUN_POINTS = runPoints(MAX_LEVEL);
 
 /** Tier name shown next to the level. */

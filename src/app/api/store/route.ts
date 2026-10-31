@@ -10,9 +10,9 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("prestige") }),
 ]);
 
-/** The signed-in user spends their own points / prestiges. Admin-only while the store is in testing. */
+/** The signed-in user spends their own points / prestiges. */
 export async function POST(req: Request) {
-  const me = await apiGuard({ requireAdmin: true });
+  const me = await apiGuard();
   if (me instanceof NextResponse) return me;
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));

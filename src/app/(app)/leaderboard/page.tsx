@@ -40,9 +40,9 @@ function Bar({ value, target }: { value: number; target: number }) {
 }
 
 export default async function LeaderboardPage() {
-  // Admin-only while the rewards program is being tested.
   const me = await getSessionUser();
-  if (!me || me.role !== "ADMIN") redirect("/studio");
+  if (!me) redirect("/login");
+  const isAdmin = me.role === "ADMIN";
 
   const [standings, sync] = await Promise.all([
     loadStandings(),
@@ -56,14 +56,14 @@ export default async function LeaderboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end gap-4">
         <div>
-          <p className="label-mono mb-2">Leaderboard · admin preview</p>
+          <p className="label-mono mb-2">Leaderboard</p>
           <h1 className="text-display text-3xl">Approved ads</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             New approvals from the creative sheet (status <span className="font-mono">Ready</span>
             ). Week {week} · month {month}. Weeks run Monday–Sunday, team time (UTC+8).
           </p>
         </div>
-        <SyncButton sync={sync ? { ...sync, baselineAt: sync.baselineAt?.toISOString() ?? null, lastSyncAt: sync.lastSyncAt?.toISOString() ?? null } : null} />
+        {isAdmin && <SyncButton sync={sync ? { ...sync, baselineAt: sync.baselineAt?.toISOString() ?? null, lastSyncAt: sync.lastSyncAt?.toISOString() ?? null } : null} />}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -98,7 +98,7 @@ export default async function LeaderboardPage() {
             <p className="text-sm text-muted-foreground">
               {sync?.baselineAt
                 ? "No new approvals yet. Ads marked Ready in the sheet from now on will show up here."
-                : "Not synced yet — press “Sync sheet” to start tracking. Ads already Ready at the first sync don’t count."}
+                : "Tracking starts with the next sheet sync. Ads already Ready before then don’t count."}
             </p>
           ) : (
             <Table>
@@ -148,7 +148,7 @@ export default async function LeaderboardPage() {
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        {POINTS_PER_APPROVAL} pts per approved creative. Level 2 takes {levelCost(1)} approvals, each
+        {POINTS_PER_APPROVAL} pt per approved creative. Level 2 takes {levelCost(1)} approvals, each
         level after a little more (Lv 10 at {THRESHOLDS[10]}, Lv 20 at {THRESHOLDS[20]}, Lv 30 at{" "}
         {THRESHOLDS[30]}, Lv {MAX_LEVEL} at {THRESHOLDS[MAX_LEVEL]}). Level-up points: {levelUpPoints(2)} to Lv 10 ·{" "}
         {levelUpPoints(11)} to Lv 20 · {levelUpPoints(21)} to Lv 30 · {levelUpPoints(31)} to Lv {MAX_LEVEL}. Prestige

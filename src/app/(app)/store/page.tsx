@@ -8,9 +8,8 @@ export const metadata = { title: "Point Store — Peakfinity Studio" };
 export const dynamic = "force-dynamic";
 
 export default async function StorePage() {
-  // Admin-only while the store is being tested.
   const me = await getSessionUser();
-  if (!me || me.role !== "ADMIN") redirect("/studio");
+  if (!me) redirect("/login");
 
   const [progress, items, mine] = await Promise.all([
     userProgress(me.id),
@@ -21,10 +20,10 @@ export default async function StorePage() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="label-mono mb-2">Point Store · admin preview</p>
+        <p className="label-mono mb-2">Point Store</p>
         <h1 className="text-display text-3xl">Spend your points</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Earn {POINTS_PER_APPROVAL} points for every approved creative, plus {levelUpPoints(2)}–
+          Earn {POINTS_PER_APPROVAL} point for every approved creative, plus {levelUpPoints(2)}–
           {levelUpPoints(MAX_LEVEL)} points each time you level up. Redemptions are reviewed by an admin.
         </p>
       </div>

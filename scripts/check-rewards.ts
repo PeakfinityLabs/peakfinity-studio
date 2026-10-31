@@ -30,11 +30,11 @@ assert.equal(periodStarts(now).monthStart.toISOString(), "2026-09-30T16:00:00.00
 // Weekly: 8 in one week → bonus; 7 → none. Monthly: 45 in one month.
 const at = (iso: string, n: number, userId = "u") => Array.from({ length: n }, () => ({ userId, approvedAt: new Date(iso) }));
 const kinds = (c: ReturnType<typeof at>) => earnedBonuses(c).map((b) => `${b.userId}:${b.kind}:${b.period}`).sort();
-assert.deepEqual(kinds(at("2026-10-27T02:00:00Z", 8)), ["u:WEEKLY:2026-W44"]);
-assert.deepEqual(kinds(at("2026-10-27T02:00:00Z", 7)), []);
-assert.deepEqual(kinds([...at("2026-10-24T02:00:00Z", 4), ...at("2026-10-27T02:00:00Z", 4)]), []); // split across weeks
-const month = [0, 1, 2, 3, 4].flatMap((w) => at(`2026-10-${String(5 + w * 5).padStart(2, "0")}T02:00:00Z`, 9));
-assert.equal(month.length, 45);
+assert.deepEqual(kinds(at("2026-10-27T02:00:00Z", 15)), ["u:WEEKLY:2026-W44"]);
+assert.deepEqual(kinds(at("2026-10-27T02:00:00Z", 14)), []);
+assert.deepEqual(kinds([...at("2026-10-24T02:00:00Z", 8), ...at("2026-10-27T02:00:00Z", 8)]), []); // split across weeks
+const month = [0, 1, 2, 3].flatMap((w) => at(`2026-10-${String(5 + w * 7).padStart(2, "0")}T02:00:00Z`, 14)).concat(at("2026-10-30T02:00:00Z", 4));
+assert.equal(month.length, 60);
 assert.ok(kinds(month).includes("u:MONTHLY:2026-10"));
 assert.ok(!kinds(month.slice(1)).includes("u:MONTHLY:2026-10"));
 
@@ -52,20 +52,20 @@ assert.equal(THRESHOLDS[2], 5);
 for (let l = 2; l < MAX_LEVEL; l++) assert.ok(levelCost(l) >= levelCost(l - 1));
 assert.ok(levelCost(MAX_LEVEL - 1) > levelCost(1));
 // Level-up points per band.
-assert.deepEqual([2, 10, 11, 20, 21, 30, 31, 50].map(levelUpPoints), [5, 5, 7, 7, 9, 9, 12, 12]);
-assert.equal(FULL_RUN_POINTS, 9 * 5 + 10 * 7 + 10 * 9 + 20 * 12);
+assert.deepEqual([2, 10, 11, 20, 21, 30, 31, 50].map(levelUpPoints), [2.5, 2.5, 3.5, 3.5, 4.5, 4.5, 6, 6]);
+assert.equal(FULL_RUN_POINTS, (9 * 5 + 10 * 7 + 10 * 9 + 20 * 12) / 2); // exactly half the old 445
 // Progress: 2 pts per approval + level-up points.
 const p0 = progressFrom(0, 0, null);
 assert.deepEqual([p0.level, p0.points, p0.into, p0.needed], [1, 0, 0, 5]);
 const p4 = progressFrom(4, 0, null);
-assert.deepEqual([p4.level, p4.points, p4.pct], [1, 8, 80]);
+assert.deepEqual([p4.level, p4.points, p4.pct], [1, 4, 80]);
 const p5 = progressFrom(5, 0, null);
-assert.deepEqual([p5.level, p5.points, p5.into], [2, 5 * 2 + 5, 0]);
+assert.deepEqual([p5.level, p5.points, p5.into], [2, 5 + 2.5, 0]);
 const p54 = progressFrom(THRESHOLDS[10], 0, null);
-assert.deepEqual([p54.level, p54.points], [10, THRESHOLDS[10] * 2 + 9 * 5]);
-assert.equal(progressFrom(THRESHOLDS[11], 0, null).points, THRESHOLDS[11] * 2 + 9 * 5 + 7);
+assert.deepEqual([p54.level, p54.points], [10, THRESHOLDS[10] + 9 * 2.5]);
+assert.equal(progressFrom(THRESHOLDS[11], 0, null).points, THRESHOLDS[11] + 9 * 2.5 + 3.5);
 // Ledger (bonuses, redemptions) adds on top.
-assert.equal(progressFrom(5, -10, null).points, 5);
+assert.equal(progressFrom(5, -5, null).points, 2.5);
 // Cap + prestige: 50 is the max; after prestige XP past the cap carries over and points keep everything.
 const cap = THRESHOLDS[MAX_LEVEL];
 const top = progressFrom(cap + 3, 0, null);
@@ -73,5 +73,5 @@ assert.deepEqual([top.level, top.canPrestige, top.pct], [MAX_LEVEL, true, 100]);
 const after = progressFrom(cap + 3, 0, { prestige: 1, xpOffset: cap });
 assert.deepEqual([after.level, after.prestige, after.into, after.canPrestige], [1, 1, 3, false]);
 assert.equal(after.points, top.points); // prestiging never costs points
-assert.equal(progressFrom(cap + 5, 0, { prestige: 1, xpOffset: cap }).points, top.points + 2 * 2 + 5);
+assert.equal(progressFrom(cap + 5, 0, { prestige: 1, xpOffset: cap }).points, top.points + 2 + 2.5);
 console.log("✔ rewards checks passed");
