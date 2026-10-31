@@ -38,7 +38,7 @@ export default async function RewardsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end gap-4">
         <div>
-          <p className="label-mono mb-2">Rewards · admin preview</p>
+          <p className="label-mono mb-2">Rewards · admin</p>
           <h1 className="text-display text-3xl">Bonuses, points & rewards</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
             Weekly: {WEEKLY.approvals} new approved ads → +{formatCents(WEEKLY.cashCents)} and{" "}

@@ -194,7 +194,7 @@ export function RewardsAdmin(props: {
               <a className="text-foreground underline underline-offset-4" href="/admin">Admin → Point Store items</a>.
             </p>
             <p>
-              Editors earn 2 points per approved creative and 5–12 points per level up. Balances are in the Points
+              Editors earn 1 point per approved creative and 2.5–6 points per level up. Balances are in the Points
               panel below.
             </p>
           </CardContent>
