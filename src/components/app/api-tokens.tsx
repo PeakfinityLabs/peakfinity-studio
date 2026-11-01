@@ -128,6 +128,11 @@ export function ApiTokens({ baseUrl }: { baseUrl: string }) {
 Header: Authorization: Bearer <token>
 
 GET  /api/omni/projects            → { projects: [{ id, name, aspectRatio, … }] }
+POST /api/omni/projects            JSON: { "name": "Brief 123", "aspectRatio": "9:16"|"16:9",
+                                           "avatarIds": [..] (optional project avatars) }
+                                   → 201 { project: { id } }
+GET  /api/omni/projects/<id>       → { project: { clips… }, generations: [..] }
+PATCH /api/omni/projects/<id>      JSON: { "name": "…" } (rename)
 GET  /api/omni/avatars             → { avatars: [{ id, name, shared, mine, … }] }
 POST /api/omni/avatars             multipart: image (jpg/png/webp ≤2MB), name, shared=1|0
                                    → { avatar: { id } }
