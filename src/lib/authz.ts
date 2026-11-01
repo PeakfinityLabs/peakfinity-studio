@@ -1,4 +1,6 @@
 import "server-only";
+import { createHash } from "node:crypto";
+import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
@@ -37,6 +39,9 @@ export function isAdminEmail(email: string): boolean {
  * role mid-session, and the change must take effect on the next request.
  */
 export async function getSessionUser(): Promise<SessionUser | null> {
+  // Scripts: `Authorization: Bearer pst_…` (personal API token) acts as its owner.
+  const bearer = (await headers()).get("authorization")?.match(/^Bearer\s+(pst_[A-Za-z0-9_-]{20,})$/)?.[1];
+  if (bearer) return userForApiToken(bearer);
   const session = await auth();
   const id = session?.user?.id;
   if (!id) return null;
@@ -51,6 +56,26 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       status: true,
     },
   });
+}
+
+export const hashApiToken = (raw: string) => createHash("sha256").update(raw).digest("hex");
+
+async function userForApiToken(raw: string): Promise<SessionUser | null> {
+  const token = await prisma.apiToken.findUnique({
+    where: { tokenHash: hashApiToken(raw) },
+    select: {
+      id: true,
+      revokedAt: true,
+      lastUsedAt: true,
+      user: { select: { id: true, email: true, name: true, role: true, jobTitle: true, status: true } },
+    },
+  });
+  if (!token || token.revokedAt) return null;
+  // ponytail: lastUsedAt updated at most once a minute to avoid a write per request.
+  if (!token.lastUsedAt || Date.now() - token.lastUsedAt.getTime() > 60_000) {
+    await prisma.apiToken.update({ where: { id: token.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+  }
+  return token.user;
 }
 
 /**

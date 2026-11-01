@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/authz";
 import { prisma } from "@/lib/db";
@@ -12,6 +13,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -82,6 +84,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                   </DropdownMenuLabel>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem render={<Link href="/account" />}>API tokens</DropdownMenuItem>
                 <SignOutItem />
               </DropdownMenuContent>
             </DropdownMenu>

@@ -95,6 +95,7 @@ model User {
   redemptions     Redemption[]
   pointsEntries   PointsEntry[]
   rewardsProfile  RewardsProfile?
+  apiTokens       ApiToken[]
 
   @@index([status, createdAt])
 }
@@ -109,6 +110,37 @@ model AppSecret {
   updatedByEmail String
   updatedAt     DateTime @updatedAt
   createdAt     DateTime @default(now())
+}
+
+/// Extra titled keys for an AppSecret name (e.g. a second Omni key). When one
+/// is `active` it's used instead of the default key. Encrypted like AppSecret.
+model ApiKeySlot {
+  id             String   @id @default(cuid())
+  /// The SecretName it stands in for (OMNI_FLASH_API_KEY, FAL_KEY, …).
+  secret         String
+  title          String
+  valueEncrypted String
+  active         Boolean  @default(false)
+  createdByEmail String
+  createdAt      DateTime @default(now())
+
+  @@index([secret])
+}
+
+/// Personal API token for scripts (Authorization: Bearer pst_…). Only the
+/// sha256 is stored; the raw token is shown once at creation.
+model ApiToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  last4      String
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
 }
 
 /// One-time password-reset tokens. A row created via "user" is a reset

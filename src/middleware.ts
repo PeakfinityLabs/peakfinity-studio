@@ -8,6 +8,10 @@ export default auth((req) => {
   if (req.auth) return NextResponse.next();
 
   const { nextUrl } = req;
+  // Personal API tokens are verified in the route handler (Node runtime, DB access).
+  if (nextUrl.pathname.startsWith("/api") && /^Bearer pst_/.test(req.headers.get("authorization") ?? "")) {
+    return NextResponse.next();
+  }
   if (nextUrl.pathname.startsWith("/api")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -35,6 +39,7 @@ export const config = {
     "/rewards",
     "/leaderboard",
     "/store",
+    "/account",
     "/pending",
     "/api/generate/:path*",
     "/api/jobs/:path*",
@@ -47,5 +52,6 @@ export const config = {
     "/api/creatives/:path*",
     "/api/omni/:path*",
     "/api/avatars/:path*",
+    "/api/tokens/:path*",
   ],
 };

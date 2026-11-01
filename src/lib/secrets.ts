@@ -77,13 +77,40 @@ export async function getSecret(name: SecretName): Promise<string | undefined> {
   }
   let dbValue: string | null = null;
   try {
-    const row = await prisma.appSecret.findUnique({ where: { name } });
-    if (row) dbValue = decrypt(row.valueEncrypted);
+    // An active titled key (Admin → API keys → extra keys) beats the default.
+    const slot = await prisma.apiKeySlot.findFirst({ where: { secret: name, active: true } });
+    const row = slot ? null : await prisma.appSecret.findUnique({ where: { name } });
+    if (slot) dbValue = decrypt(slot.valueEncrypted);
+    else if (row) dbValue = decrypt(row.valueEncrypted);
   } catch {
     // DB unavailable or decrypt failed — fall back to env rather than break.
   }
   cache.set(name, { value: dbValue, expires: Date.now() + TTL_MS });
   return dbValue ?? process.env[name] ?? undefined;
+}
+
+// ─── Extra titled keys per secret ────────────────────────────────────────────
+
+export async function addKeySlot(secret: SecretName, title: string, value: string, byEmail: string) {
+  const slot = await prisma.apiKeySlot.create({
+    data: { secret, title, valueEncrypted: encrypt(value), createdByEmail: byEmail },
+    select: { id: true },
+  });
+  return slot.id;
+}
+
+/** Makes one extra key the live one for its secret; null = back to the default key. */
+export async function activateKeySlot(secret: SecretName, slotId: string | null) {
+  await prisma.$transaction([
+    prisma.apiKeySlot.updateMany({ where: { secret }, data: { active: false } }),
+    ...(slotId ? [prisma.apiKeySlot.updateMany({ where: { id: slotId, secret }, data: { active: true } })] : []),
+  ]);
+  bustSecretCache(secret);
+}
+
+export async function deleteKeySlot(slotId: string) {
+  const slot = await prisma.apiKeySlot.delete({ where: { id: slotId } });
+  if (isSecretName(slot.secret)) bustSecretCache(slot.secret);
 }
 
 export async function setSecret(name: SecretName, value: string, byEmail: string): Promise<void> {
@@ -102,7 +129,10 @@ export async function clearSecret(name: SecretName): Promise<void> {
   bustSecretCache(name);
 }
 
+export type KeySlotStatus = { id: string; title: string; hint: string; active: boolean; createdAt: string };
+
 export type SecretStatus = {
+  slots: KeySlotStatus[];
   name: SecretName;
   label: string;
   help: string;
@@ -114,8 +144,18 @@ export type SecretStatus = {
 
 /** Masked status for every catalog secret — never returns raw values. */
 export async function getSecretStatuses(): Promise<SecretStatus[]> {
-  const rows = await prisma.appSecret.findMany();
+  const [rows, slots] = await Promise.all([
+    prisma.appSecret.findMany(),
+    prisma.apiKeySlot.findMany({ orderBy: { createdAt: "asc" } }),
+  ]);
   const byName = new Map(rows.map((r) => [r.name, r]));
+  const hintOf = (enc: string) => {
+    try {
+      return `…${decrypt(enc).slice(-4)}`;
+    } catch {
+      return "unreadable";
+    }
+  };
   return SECRET_CATALOG.map(({ name, label, help }) => {
     const row = byName.get(name);
     let source: SecretStatus["source"] = "unset";
@@ -132,6 +172,9 @@ export async function getSecretStatuses(): Promise<SecretStatus[]> {
       value = process.env[name];
     }
     return {
+      slots: slots
+        .filter((s) => s.secret === name)
+        .map((s) => ({ id: s.id, title: s.title, hint: hintOf(s.valueEncrypted), active: s.active, createdAt: s.createdAt.toISOString() })),
       name,
       label,
       help,
