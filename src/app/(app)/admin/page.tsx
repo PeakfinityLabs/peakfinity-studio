@@ -7,13 +7,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminUsers } from "@/components/admin/admin-users";
 import { AdminSecrets } from "@/components/admin/admin-secrets";
 import { AdminStoreItems } from "@/components/admin/admin-store-items";
+import { OmniUsageTracker } from "@/components/admin/omni-usage-tracker";
+import { dayStart, omniDailyUsage, omniSpendSince, teamToday } from "@/lib/omni-usage";
 
 export const metadata = { title: "Admin — Peakfinity Studio" };
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ omniFrom?: string; omniTo?: string }>;
+}) {
   const me = (await getSessionUser())!;
+  const { omniFrom, omniTo } = await searchParams;
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  const omniToDate = omniTo && day.test(omniTo) ? omniTo : teamToday();
+  const omniFromDate =
+    omniFrom && day.test(omniFrom)
+      ? omniFrom
+      : new Date(dayStart(omniToDate).getTime() - 29 * 86_400_000).toISOString().slice(0, 10);
 
-  const [users, counts, usage, resetRequests, storeItems] = await Promise.all([
+  const [users, counts, usage, resetRequests, storeItems, omniDays, topUps] = await Promise.all([
     prisma.user.findMany({
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
       select: {
@@ -45,7 +58,26 @@ export default async function AdminPage() {
       orderBy: [{ active: "desc" }, { costPoints: "asc" }],
       include: { _count: { select: { redemptions: true } } },
     }),
+    omniDailyUsage(omniFromDate, omniToDate),
+    prisma.omniTopUp.findMany({ orderBy: { toppedUpAt: "desc" }, take: 12 }),
   ]);
+  const lastTopUp = new Map(topUps.map((t) => [t.server, t]));
+  const since = await Promise.all(
+    (["1", "2"] as const).map(async (server) => {
+      const last = lastTopUp.get(server);
+      return { server, hasTopUp: Boolean(last), cents: last ? await omniSpendSince(server, last.toppedUpAt) : 0 };
+    })
+  );
+  const omniTotals = omniDays.reduce(
+    (a, d) => ({
+      clips: a.clips + d.clips,
+      seconds: a.seconds + d.seconds,
+      cents: a.cents + d.cents,
+      s1Cents: a.s1Cents + d.s1Cents,
+      s2Cents: a.s2Cents + d.s2Cents,
+    }),
+    { clips: 0, seconds: 0, cents: 0, s1Cents: 0, s2Cents: 0 }
+  );
   const resetRequestByUser = new Map(
     resetRequests.map((r) => [r.userId, r.createdAt.toISOString()])
   );
@@ -110,6 +142,21 @@ export default async function AdminPage() {
           </Card>
         ))}
       </div>
+
+      <OmniUsageTracker
+        days={omniDays}
+        from={omniFromDate}
+        to={omniToDate}
+        totals={omniTotals}
+        since={since}
+        topUps={topUps.map((t) => ({
+          id: t.id,
+          server: t.server,
+          amountCents: t.amountCents,
+          day: teamToday(t.toppedUpAt), // team-time date it was entered as
+          note: t.note,
+        }))}
+      />
 
       <AdminUsers users={rows} />
 

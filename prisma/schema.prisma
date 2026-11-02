@@ -312,6 +312,20 @@ model UsageEvent {
   @@index([userId, createdAt])
 }
 
+/// A balance top-up on an Omni provider account (Admin → Omni usage), so spend
+/// since the last top-up can be tracked. server "1" = WebInHour, "2" = fal.
+model OmniTopUp {
+  id          String   @id @default(cuid())
+  server      String   @default("1")
+  amountCents Int
+  toppedUpAt  DateTime
+  note        String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  @@index([server, toppedUpAt])
+}
+
 /// Omni Zone project: one editor's private workspace (never visible to other
 /// users, admins included). Its generations are ordinary Jobs tagged with
 /// input.projectId, so they still show in the Library for admins.
