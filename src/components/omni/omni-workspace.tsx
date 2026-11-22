@@ -18,7 +18,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ReferenceUploader } from "@/components/studio/reference-uploader";
-import { NewAvatarDialog, useAvatars } from "@/components/omni/avatar-library";
+import { Trash2Icon } from "lucide-react";
+import { type AvatarRow, NewAvatarDialog, useAvatars } from "@/components/omni/avatar-library";
 import { ClipEditor } from "@/components/omni/clip-editor";
 import { PreviewDialog, type PreviewItem } from "@/components/omni/preview-dialog";
 import { fetchJson } from "@/lib/http";
@@ -71,12 +72,17 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
-export function OmniWorkspace({ projectId }: { projectId: string }) {
+export function OmniWorkspace({ projectId, isAdmin = false }: { projectId: string; isAdmin?: boolean }) {
   const router = useRouter();
   const [project, setProject] = useState<ProjectData | null>(null);
   const [generations, setGenerations] = useState<Generation[]>([]);
   const { avatars, reload: reloadAvatars } = useAvatars();
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+  // Workflow tidiness: the avatar picker and the generations list collapse.
+  const [avatarsOpen, setAvatarsOpen] = useState(false);
+  const [ingredientsOpen, setIngredientsOpen] = useState(false);
+  const [gensOpen, setGensOpen] = useState(true);
+  const [busyAvatar, setBusyAvatar] = useState<string | null>(null);
 
   // Generator state
   const [mode, setMode] = useState<OmniMode>("create");
@@ -143,7 +149,11 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
 
   // Create mode starts with the avatars picked for the project.
   useEffect(() => {
-    void load().then((p) => p && setAvatarIds(p.avatarIds));
+    void load().then((p) => {
+      if (!p) return;
+      setAvatarIds(p.avatarIds);
+      if (p.avatarIds.length === 0) setAvatarsOpen(true);
+    });
   }, [load]);
 
   if (!project) {
@@ -215,6 +225,22 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
       toast.error(error instanceof Error ? error.message : "Could not save the request");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Delete a saved avatar (its creator or an admin only — the API enforces it).
+  const deleteAvatar = async (a: AvatarRow) => {
+    if (!window.confirm(`Delete the avatar "${a.name}"? Nobody will be able to use it after this.`)) return;
+    setBusyAvatar(a.id);
+    try {
+      await fetchJson(`/api/avatars/${a.id}`, { method: "DELETE" });
+      toast.success("Avatar deleted");
+      if (avatarIds.includes(a.id)) chooseAvatars(avatarIds.filter((x) => x !== a.id));
+      await reloadAvatars();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Delete failed");
+    } finally {
+      setBusyAvatar(null);
     }
   };
 
@@ -663,8 +689,23 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
           {/* ─── Generations made in this project ─── */}
           <Card>
             <CardContent className="space-y-3 pt-4">
-              <h2 className="font-medium">Generations in this project</h2>
-              {generations.length === 0 ? (
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-medium">
+                  Generations in this project
+                  {generations.length > 0 && (
+                    <span className="ml-1.5 font-normal text-muted-foreground">{generations.length}</span>
+                  )}
+                </h2>
+                <button
+                  type="button"
+                  aria-expanded={gensOpen}
+                  onClick={() => setGensOpen((v) => !v)}
+                  className="rounded px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  {gensOpen ? "Hide" : "Show"}
+                </button>
+              </div>
+              {!gensOpen ? null : generations.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   Nothing yet — use the panel to create your first scene.
                 </p>
@@ -810,53 +851,122 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
 
             {mode === "create" && (
               <div className="space-y-1.5">
-                <Label>Avatars</Label>
-                {avatars === null ? (
-                  <Skeleton className="h-16 w-full" />
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {avatars.map((a) => {
-                      const on = avatarIds.includes(a.id);
-                      return (
-                        <button
-                          key={a.id}
-                          type="button"
-                          aria-pressed={on}
-                          title={a.description ? `${a.name} — ${a.description}` : a.name}
-                          disabled={!on && avatarIds.length >= MAX_AVATARS}
-                          onClick={() =>
-                            chooseAvatars(
-                              on ? avatarIds.filter((x) => x !== a.id) : [...avatarIds, a.id]
-                            )
-                          }
-                          className={cn(
-                            "w-16 space-y-1 rounded-lg border p-1 text-center transition-colors disabled:opacity-40",
-                            on ? "border-foreground ring-2 ring-foreground/30" : "hover:bg-accent"
-                          )}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={a.imageUrl}
-                            alt=""
-                            className="aspect-square w-full rounded object-cover"
-                          />
-                          <span className="block truncate text-[10px]">{a.name}</span>
-                        </button>
-                      );
-                    })}
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Avatars</Label>
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      disabled={avatarIds.length >= MAX_AVATARS}
                       onClick={() => setAvatarDialogOpen(true)}
-                      className="flex w-16 flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-1 text-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+                      disabled={avatarIds.length >= MAX_AVATARS}
+                      className="rounded px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
                     >
-                      <span className="flex aspect-square w-full items-center justify-center text-xl">
-                        +
-                      </span>
-                      <span className="block text-[10px]">New avatar</span>
+                      + New
+                    </button>
+                    <button
+                      type="button"
+                      aria-expanded={avatarsOpen}
+                      onClick={() => setAvatarsOpen((v) => !v)}
+                      className="rounded px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      {avatarsOpen ? "Done" : avatarIds.length ? `Change (${avatarIds.length}/${MAX_AVATARS})` : "Choose"}
                     </button>
                   </div>
+                </div>
+
+                {/* Who's in this clip — always visible, one click to drop. */}
+                {avatars === null ? (
+                  <Skeleton className="h-8 w-full" />
+                ) : avatarIds.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No avatars selected — optional.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {avatarIds.map((id) => {
+                      const a = avatars.find((x) => x.id === id);
+                      if (!a) return null;
+                      return (
+                        <span
+                          key={id}
+                          className="flex items-center gap-1.5 rounded-full border bg-card py-0.5 pr-1 pl-0.5"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={a.imageUrl} alt="" className="size-6 rounded-full object-cover" />
+                          <span className="max-w-24 truncate text-xs">{a.name}</span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${a.name}`}
+                            onClick={() => chooseAvatars(avatarIds.filter((x) => x !== id))}
+                            className="text-muted-foreground transition-colors hover:text-foreground"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
                 )}
+
+                {avatarsOpen && avatars !== null && (
+                  <div className="max-h-52 overflow-y-auto rounded-lg border bg-muted/30 p-2">
+                    <div className="flex flex-wrap gap-2">
+                      {avatars.map((a) => {
+                        const on = avatarIds.includes(a.id);
+                        return (
+                          <div key={a.id} className="relative">
+                            <button
+                              type="button"
+                              aria-pressed={on}
+                              title={a.description ? `${a.name} — ${a.description}` : a.name}
+                              disabled={!on && avatarIds.length >= MAX_AVATARS}
+                              onClick={() =>
+                                chooseAvatars(
+                                  on ? avatarIds.filter((x) => x !== a.id) : [...avatarIds, a.id]
+                                )
+                              }
+                              className={cn(
+                                "relative block w-16 overflow-hidden rounded-lg border transition-colors disabled:opacity-40",
+                                on ? "border-foreground ring-2 ring-foreground/30" : "hover:opacity-90"
+                              )}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={a.imageUrl}
+                                alt=""
+                                className="aspect-square w-full rounded object-cover"
+                              />
+                              <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 to-transparent px-1 pt-3 pb-0.5 text-left text-[10px] text-white">
+                                {a.name}
+                              </span>
+                            </button>
+                            {(a.mine || isAdmin) && (
+                              <button
+                                type="button"
+                                aria-label={`Delete avatar ${a.name}`}
+                                title="Delete avatar"
+                                disabled={busyAvatar === a.id}
+                                onClick={() => void deleteAvatar(a)}
+                                className="absolute -top-1.5 -right-1.5 grid size-5 place-items-center rounded-full border bg-background text-destructive shadow-sm transition-colors hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
+                              >
+                                <Trash2Icon className="size-3" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        disabled={avatarIds.length >= MAX_AVATARS}
+                        onClick={() => setAvatarDialogOpen(true)}
+                        className="flex w-16 flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-1 text-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+                      >
+                        <span className="flex aspect-square w-full items-center justify-center text-xl">
+                          +
+                        </span>
+                        <span className="block text-[10px]">New avatar</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {avatarsOpen && (
                 <p className="text-xs text-muted-foreground">
                   Selected avatars are saved as this project&apos;s default. Up to {MAX_AVATARS}.
                   Mention them by name in the prompt (e.g. &quot;
@@ -864,6 +974,7 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                     "Linda"}{" "}
                   walks in…&quot;).
                 </p>
+                )}
               </div>
             )}
 
@@ -944,17 +1055,39 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
             </div>
 
             {mode === "create" && (
-              <ReferenceUploader
-                def={{
-                  name: "image_urls",
-                  label: `Ingredients (optional, up to ${maxIngredients})`,
-                  accept: "image/*",
-                  max: maxIngredients,
-                  help: "Products, logos, locations — say in the prompt where each should appear.",
-                }}
-                urls={ingredients}
-                onChange={setIngredients}
-              />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Ingredients</Label>
+                  <button
+                    type="button"
+                    aria-expanded={ingredientsOpen}
+                    onClick={() => setIngredientsOpen((v) => !v)}
+                    className="rounded px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    {ingredientsOpen ? "Done" : ingredients.length ? `Change (${ingredients.length}/${maxIngredients})` : "Add"}
+                  </button>
+                </div>
+                {ingredientsOpen && (
+                  <ReferenceUploader
+                    def={{
+                      name: "image_urls",
+                      label: "Used for scale",
+                      accept: "image/*",
+                      max: maxIngredients,
+                      help: "Products, logos, locations — say in the prompt where each should appear.",
+                    }}
+                    urls={ingredients}
+                    onChange={setIngredients}
+                  />
+                )}
+                {!ingredientsOpen && (
+                  <p className="text-xs text-muted-foreground">
+                    {ingredients.length
+                      ? `${ingredients.length} image${ingredients.length === 1 ? "" : "s"} attached`
+                      : `Optional — product, logo or location shots, up to ${maxIngredients}.`}
+                  </p>
+                )}
+              </div>
             )}
 
             <div className="space-y-1.5">

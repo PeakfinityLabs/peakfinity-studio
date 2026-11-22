@@ -10,5 +10,6 @@ export default async function OmniProjectPage({ params }: { params: Promise<{ id
   const me = (await getSessionUser())!;
   // Projects are private to their owner — anyone else (admins included) gets a 404.
   if (!(await findOwnProject(me, id))) notFound();
-  return <OmniWorkspace projectId={id} />;
+  // Admins can delete any avatar, so their picker shows the delete button on all.
+  return <OmniWorkspace projectId={id} isAdmin={me.role === "ADMIN"} />;
 }
