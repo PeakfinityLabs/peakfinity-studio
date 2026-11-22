@@ -139,8 +139,10 @@ POST /api/omni/avatars             multipart: image (jpg/png/webp ≤2MB), name,
 
 POST /api/omni/generations         JSON:
   { "project_id": "…", "mode": "create", "prompt": "…",
-    "avatar_id": "…" (or "avatar_ids": [..]), "duration": 4|6|8|10,
-    "server": 1|2, "image_urls": [..] (optional ingredients) }
+    "avatar_id": "…" (or "avatar_ids": [..]),
+    "model": "1.1" (default) | "1.2" | "1.2vp",
+    "duration": 4|6|8|10 (1.1) or 4|6|8|10|12|15 (1.2 / 1.2vp — 1.2 accepts 3-15),
+    "server": 1|2 (1.2 runs on server 1 only), "image_urls": [..] (optional) }
   → 201 { "id": "…", "status": "queued" }
 
 POST /api/omni/generations         { "items": [ …up to 50 of the above ] }

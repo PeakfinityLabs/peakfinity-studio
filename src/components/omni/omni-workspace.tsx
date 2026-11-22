@@ -26,7 +26,11 @@ import { cn } from "@/lib/utils";
 import {
   MAX_AVATARS,
   MAX_INGREDIENTS,
-  OMNI_DURATIONS,
+  OMNI_VERSION_INFO,
+  OMNI_VERSIONS,
+  omniDurations,
+  omniCostCents,
+  type OmniVersion,
   OMNI_MODE_INFO,
   OMNI_MODES,
   MAX_REFERENCE_IMAGES,
@@ -80,9 +84,19 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
   const [duration, setDuration] = useState<string>("8");
   // Server 1 = main, Server 2 = backup. Remembered per browser so editors don't re-pick it.
   const [server, setServer] = useState<"1" | "2">("1");
+  // Omni model version: 1.1 (existing credits, default), 1.2, 1.2 VP. Remembered per browser.
+  const [version, setVersion] = useState<OmniVersion>("1.1");
   useEffect(() => {
     if (localStorage.getItem("omni-server") === "2") setServer("2");
+    const saved = localStorage.getItem("omni-model");
+    if (saved && (OMNI_VERSIONS as readonly string[]).includes(saved)) setVersion(saved as OmniVersion);
   }, []);
+  const durations = omniDurations(version);
+  // 1.2 only runs on Server 1; drop back to 10s if the model goes back to 1.1.
+  useEffect(() => {
+    if (version !== "1.1" && server === "2") setServer("1");
+    if (version === "1.1" && !(durations as readonly string[]).includes(duration)) setDuration("10");
+  }, [version, server, durations, duration]);
   const [avatarIds, setAvatarIds] = useState<string[]>([]);
   const [ingredients, setIngredients] = useState<string[]>([]);
   const [photo, setPhoto] = useState<string[]>([]);
@@ -186,6 +200,7 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
           duration,
           resolution: "720p",
           server,
+          model: version,
           avatar_ids: mode === "create" ? avatarIds : [],
           image_urls: mode === "create" ? ingredients.slice(0, maxIngredients) : [],
           ...(mode === "animate" ? { image_url: photo[0] } : {}),
@@ -942,6 +957,32 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
               />
             )}
 
+            <div className="space-y-1.5">
+              <Label>Model</Label>
+              <Select
+                value={version}
+                onValueChange={(v) => {
+                  if (!v || !(OMNI_VERSIONS as readonly string[]).includes(v)) return;
+                  setVersion(v as OmniVersion);
+                  try {
+                    localStorage.setItem("omni-model", v);
+                  } catch {
+                    // private mode — still applies for this session
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full" aria-label="Omni model">
+                  <SelectValue>{OMNI_VERSION_INFO[version].label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {OMNI_VERSIONS.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {OMNI_VERSION_INFO[v].label} — {OMNI_VERSION_INFO[v].help}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Duration</Label>
@@ -950,7 +991,7 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                     <SelectValue>{duration}s</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {OMNI_DURATIONS.map((d) => (
+                    {durations.map((d) => (
                       <SelectItem key={d} value={d}>
                         {d}s
                       </SelectItem>
@@ -972,7 +1013,7 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
                     }
                   }}
                 >
-                  <SelectTrigger className="w-full" aria-label="Server">
+                  <SelectTrigger className="w-full" aria-label="Server" disabled={version !== "1.1"}>
                     <SelectValue>{server === "2" ? "Server 2" : "Server 1"}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -997,10 +1038,10 @@ export function OmniWorkspace({ projectId }: { projectId: string }) {
             <p className="text-center text-xs text-muted-foreground">
               {missing ??
                 (mode === "edit" || mode === "extend"
-                  ? "Omni Flash 1.1 · edits the last 10s of the clip"
+                  ? `${OMNI_VERSION_INFO[version].label} · edits the last 10s of the clip`
                   : server === "2"
-                    ? "Omni Flash 1.1 on fal · $0.10/s ($0.80 per 8s clip)"
-                    : "Omni Flash 1.1 · $0.02/s ($0.16 per 8s clip)")}
+                    ? `Omni Flash 1.1 on fal · $0.10/s ($${(Number(duration) * 0.1).toFixed(2)} for ${duration}s)`
+                    : `${OMNI_VERSION_INFO[version].label} · $${(omniCostCents(version, Number(duration)) / 100).toFixed(2)} for ${duration}s`) }
             </p>
           </CardContent>
         </Card>

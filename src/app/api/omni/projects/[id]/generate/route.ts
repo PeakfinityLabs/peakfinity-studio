@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiGuard } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { OMNI_ENDPOINT, omniGenerateSchema, OMNI_CENTS_PER_SECOND } from "@/lib/omni";
+import { omniCostCents, omniEndpoint, omniGenerateSchema } from "@/lib/omni";
 import { findOwnProject, visibleAvatarsWhere } from "@/lib/omni-server";
 import { submitJob, toAspect, type OmnirouterInput } from "@/lib/omnirouter";
 import { fal, falWebhookUrl } from "@/lib/fal/client";
@@ -13,6 +13,9 @@ import { publicVideoWindow } from "@/lib/omni-video";
 import type { Prisma } from "@/generated/prisma/client";
 
 export const runtime = "nodejs";
+
+/** Omni version → omnirouter model id. */
+const OMNI_MODEL_ID = { "1.1": "omni-flash", "1.2": "omni-flash-1-2", "1.2vp": "omni-flash-1-2-vp" } as const;
 
 /**
  * Omni Flash 1.1 generation (via omnirouter). Mode → provider input:
@@ -80,6 +83,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     duration: rest.duration,
     resolution: rest.resolution,
     server: rest.server,
+    model: rest.model,
     ...(rest.mode === "create" || rest.mode === "edit" ? { image_urls: rest.image_urls } : {}),
     ...(rest.mode === "animate" ? { image_url: rest.image_url } : {}),
     ...(rest.mode === "edit" ? { video_url: rest.video_url } : {}),
@@ -152,17 +156,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   let remoteId: string;
-  let endpoint = OMNI_ENDPOINT;
-  let centsPerSecond = OMNI_CENTS_PER_SECOND;
+  let endpoint = omniEndpoint(rest.model);
+  // Cost of this clip: 1.1 = 2¢/s, 1.2 = 35¢/s, 1.2 VP = flat 32¢ (see omniCostCents).
+  let costCents = omniCostCents(rest.model, seconds);
   try {
     if (rest.server === "2") {
+      if (rest.model !== "1.1") {
+        return NextResponse.json(
+          { error: "Omni 1.2 runs on Server 1 only — set the server to Server 1." },
+          { status: 400 }
+        );
+      }
       const req2 = falOmni(falReq!);
       if (req2.input.duration) seconds = Number(req2.input.duration);
       endpoint = req2.endpoint;
-      centsPerSecond = FAL_OMNI_CENTS_PER_SECOND;
+      costCents = seconds * FAL_OMNI_CENTS_PER_SECOND;
       remoteId = (await fal.queue.submit(endpoint, { input: req2.input, webhookUrl: falWebhookUrl() })).request_id;
     } else {
-      remoteId = (await submitJob("omni-flash", providerInput)).id;
+      remoteId = (await submitJob(OMNI_MODEL_ID[rest.model], providerInput)).id;
     }
   } catch (error) {
     const message =
@@ -190,7 +201,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         ...(sourceClip ? { sourceClipId: sourceClip.id } : {}),
       } as Prisma.InputJsonValue,
       prompt: rest.prompt,
-      estimatedCostCents: seconds * centsPerSecond,
+      estimatedCostCents: costCents,
       assets: {
         create: inputUrls.map((url) => ({
           kind: "INPUT" as const,

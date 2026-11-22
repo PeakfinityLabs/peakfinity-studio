@@ -8,6 +8,43 @@ import { z } from "zod";
 
 export const OMNI_ENDPOINT = "omnirouter/omni-flash";
 
+// ─── Model versions ──────────────────────────────────────────────────────────
+// 1.1 = existing credits. 1.2 = newer, 3–15s, $0.35/s. 1.2 VP = same model
+// billed a flat $0.32 per request regardless of length — cheapest for long clips.
+export const OMNI_VERSIONS = ["1.1", "1.2", "1.2vp"] as const;
+export type OmniVersion = (typeof OMNI_VERSIONS)[number];
+
+export const OMNI_VERSION_INFO: Record<OmniVersion, { label: string; help: string }> = {
+  "1.1": { label: "Omni 1.1", help: "Existing credits · up to 10s · $0.02/s" },
+  "1.2": { label: "Omni 1.2", help: "Up to 15s · $0.035/s (4s ≈ $0.14, 15s ≈ $0.53)" },
+  "1.2vp": { label: "Omni 1.2 VP", help: "Up to 15s · flat $0.32 per clip — cheapest past ~9s" },
+};
+
+const OMNI_ENDPOINTS: Record<OmniVersion, string> = {
+  "1.1": OMNI_ENDPOINT,
+  "1.2": "omnirouter/omni-flash-1-2",
+  "1.2vp": "omnirouter/omni-flash-1-2-vp",
+};
+export const omniEndpoint = (version: OmniVersion) => OMNI_ENDPOINTS[version];
+
+/** Whole seconds each version accepts (1.2 runs 3–15; we offer the even steps + 15). */
+export const OMNI_DURATIONS = ["4", "6", "8", "10"] as const;
+export const OMNI_DURATIONS_12 = ["4", "6", "8", "10", "12", "15"] as const;
+export const OMNI_ALL_DURATIONS = ["4", "6", "8", "10", "12", "15"] as const;
+export const omniDurations = (version: OmniVersion): readonly string[] =>
+  version === "1.1" ? OMNI_DURATIONS : OMNI_DURATIONS_12;
+
+/**
+ * Pre-submit cost estimate. The provider's own `cost` replaces it once the job
+ * settles (that's the figure actually deducted), so these only need to be close:
+ * measured 1.2 = $0.14 for 4s (3.5¢/s), 1.2 VP = $0.32 flat.
+ */
+export function omniCostCents(version: OmniVersion, seconds: number): number {
+  if (version === "1.1") return seconds * OMNI_CENTS_PER_SECOND;
+  if (version === "1.2vp") return 32;
+  return Math.round(seconds * 3.5);
+}
+
 export const OMNI_MODES = ["create", "animate", "edit", "extend"] as const;
 export type OmniMode = (typeof OMNI_MODES)[number];
 
@@ -34,7 +71,6 @@ export const OMNI_ASPECT_RATIOS = ["9:16", "16:9"] as const;
 // Provider limits (Omni Flash 1.1): 4/6/8/10s, 720p on the purchased plan,
 // ≤7 reference images (avatars + ingredients combined). Edit/Extend use the
 // last ≤10s of the source video and take no reference images.
-export const OMNI_DURATIONS = ["4", "6", "8", "10"] as const;
 export const OMNI_RESOLUTIONS = ["720p"] as const;
 export const MAX_INGREDIENTS = { create: 7, edit: 0 } as const;
 export const MAX_REFERENCE_IMAGES = 7; // provider docs: Omni 1.1 Flash takes ≤7
@@ -51,7 +87,9 @@ export const omniGenerateSchema = z
     mode: z.enum(OMNI_MODES).default("create"),
     prompt: z.string().trim().min(1, "Prompt is required").max(5000),
     aspect_ratio: z.enum(OMNI_ASPECT_RATIOS).default("9:16"),
-    duration: z.enum(OMNI_DURATIONS).default("8"),
+    duration: z.enum(OMNI_ALL_DURATIONS).default("8"),
+    /** Omni model version — 1.1 (existing credits), 1.2, or 1.2 VP. */
+    model: z.enum(OMNI_VERSIONS).default("1.1"),
     resolution: z.enum(OMNI_RESOLUTIONS).default("720p"),
     /** Server 1 = omnirouter, Server 2 = the same Omni Flash 1.1 on fal — see lib/server2.ts. */
     server: z.enum(["1", "2"]).default("1"),
@@ -71,6 +109,10 @@ export const omniGenerateSchema = z
     if (p.mode === "extend" && !p.source_clip_id) issue("Pick the clip to extend");
     if (p.mode === "create" && p.image_urls.length + p.avatar_ids.length > MAX_REFERENCE_IMAGES) {
       issue(`Avatars + ingredients can total at most ${MAX_REFERENCE_IMAGES} images`);
+    }
+    // 1.1 stops at 10s; 12s/15s need 1.2.
+    if (p.model === "1.1" && !(OMNI_DURATIONS as readonly string[]).includes(p.duration)) {
+      issue("Omni 1.1 goes up to 10s — switch the model to 1.2 for longer clips");
     }
   });
 
@@ -94,7 +136,8 @@ export function avatarImageUrl(id: string): string {
  * CDN, where uploads and generations live, or our own R2 media route. Anything
  * else is rejected so a clip URL can't make the server fetch arbitrary hosts.
  */
-const ALLOWED_CLIP_HOSTS = ["fal.media", "cdn.royaltechno.cc"];
+// fal CDN + the omnirouter output hosts (old royaltechno CDN, new omnirouter.li).
+const ALLOWED_CLIP_HOSTS = ["fal.media", "cdn.royaltechno.cc", "omnirouter.li"];
 
 export function isAllowedClipUrl(raw: string): boolean {
   if (raw.startsWith("/api/media/outputs/") && !raw.includes("..")) return true;

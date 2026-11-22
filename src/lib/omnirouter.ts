@@ -19,6 +19,8 @@ export const OMNIROUTER_PREFIX = "omnirouter/";
 export const OMNIROUTER_MODELS = {
   "veo-3-1": { secret: "VEO_API_KEY" as SecretName, label: "Veo 3.1 Lite" },
   "omni-flash": { secret: "OMNI_FLASH_API_KEY" as SecretName, label: "Omni Flash 1.1" },
+  "omni-flash-1-2": { secret: "OMNI_FLASH_1_2_API_KEY" as SecretName, label: "Omni Flash 1.2" },
+  "omni-flash-1-2-vp": { secret: "OMNI_FLASH_1_2_API_KEY" as SecretName, label: "Omni Flash 1.2 VP" },
 } as const;
 export type OmnirouterModel = keyof typeof OMNIROUTER_MODELS;
 

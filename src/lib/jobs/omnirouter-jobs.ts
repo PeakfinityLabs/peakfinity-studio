@@ -3,7 +3,6 @@ import { prisma } from "@/lib/db";
 import { fal } from "@/lib/fal/client";
 import { completeJob, failJob } from "@/lib/jobs/complete";
 import { parseJobInput } from "@/lib/jobs/types";
-import { OMNI_ENDPOINT } from "@/lib/omni";
 import {
   costToCents,
   errorText,
@@ -58,8 +57,10 @@ export async function refreshOmnirouterJob(job: {
       WHERE id = ${job.id} AND status IN ('IN_QUEUE','IN_PROGRESS')
         AND (input->>'settlingAt' IS NULL OR (input->>'settlingAt')::bigint < ${Date.now() - 5 * 60_000})`;
     if (claim === 0) return;
-    // Record the provider's real cost before completeJob copies it to usage.
-    if (cents !== null && endpoint !== OMNI_ENDPOINT) {
+    // Record the provider's real cost before completeJob copies it to usage —
+    // that's exactly what comes off the balance (1.1 2¢/s, 1.2 3.5¢/s,
+    // 1.2 VP $0.32/request). The estimate only covers the window before that.
+    if (cents !== null) {
       await prisma.job.updateMany({
         where: { id: job.id, status: { in: ["IN_QUEUE", "IN_PROGRESS"] } },
         data: { estimatedCostCents: cents },
